@@ -39,21 +39,26 @@ JSON body:
 
 ## Callback behavior
 
-Duitku sends a form-encoded POST. The function:
-1. Verifies HMAC-SHA256 over `merchantCode + amount + merchantOrderId` and checks the merchant code.
-2. Matches `merchantOrderId` and amount against `mec_payments`.
-3. Persists an event in `mec_payment_events` with a fingerprint for duplicate detection.
-4. Updates payment status; a later failure callback cannot downgrade a payment already marked paid.
-5. Marks the order confirmed and reservation consumed on verified success if it is still awaiting payment and the reservation remains active.
-6. Returns HTTP 200 only after the callback is processed. Failed processing returns a non-200 response so Duitku can retry.
+Duitku POP callback signature follows the official contract: HMAC-SHA256 over `merchantCode + amount + merchantOrderId`, using the API key. Create Invoice request signature is HMAC-SHA256 over `merchantCode + timestamp`, using the API key.
 
-## Current implementation limits / release gates
+The deployed callback function delegates all event/payment/order/reservation writes to `public.mec_process_duitku_callback`, a PostgreSQL RPC that runs in one transaction:
 
-- The callback updates payment, order, and event rows through separate PostgREST requests rather than a single PostgreSQL transaction. Before enabling real customer payments, replace this with an atomic MEC-only RPC so a partial write can be recovered deterministically.
-- A successful callback arriving after the order's reservation was already released is flagged for manual reconciliation; it does not silently recreate inventory.
-- There is no verified POP-specific transaction inquiry/reconciliation job yet. Do not auto-retry a payment in `unknown`.
-- No real payment or callback test has been run because that would require an actual sandbox merchant transaction and configured secrets.
-- Confirm that `MEC_DUITKU_RETURN_URL`, Duitku merchant credentials, and `DUITKU_ENVIRONMENT=sandbox` are set before sandbox testing. Production traffic should remain disabled until callback concurrency/idempotency and failure recovery are tested.
+1. Records the callback event and deduplicates it by `event_fingerprint`.
+2. Locks the matching payment and order rows before validating amount and applying state transitions.
+3. Updates payment status and, for a valid success callback with an active reservation, confirms the order and consumes the reservation atomically.
+4. Does not downgrade an already-paid payment when a later failure callback arrives.
+5. If payment succeeds after inventory reservation release, records `PAID_AFTER_RESERVATION_RELEASED` and flags reconciliation rather than silently recreating inventory.
+6. Grants RPC execution only to `service_role`; `anon` and `authenticated` cannot execute it directly.
+7. Acknowledges a valid callback after durable processing/anomaly recording with HTTP 200 to avoid needless provider retries; invalid signatures are rejected, and database/RPC failures return HTTP 500 for retry.
+
+## Verification and release gates
+
+- Atomic success + duplicate replay were tested in a rolled-back SQL transaction using synthetic MEC rows; the test data was not retained.
+- RPC grants were verified: execute is denied to `anon` and `authenticated`, and allowed to `service_role`.
+- No end-to-end sandbox payment has been run yet. The MEC product/order/payment/event tables currently have zero rows, so a real test requires a valid sandbox merchant setup and a test product/order.
+- Verify that `MEC_DUITKU_RETURN_URL` resolves to a real frontend route before checkout testing. Duitku documents that the return URL must be a landing page, and return parameters must not be used as payment authority.
+- No POP-specific transaction inquiry/reconciliation job has been implemented. Do not auto-retry an attempt in `unknown`.
+- Keep production traffic disabled until end-to-end sandbox success/failure, duplicate callback, invalid signature, amount mismatch, timeout/unknown, and reservation-release race tests pass.
 
 ## Official contract references
 
