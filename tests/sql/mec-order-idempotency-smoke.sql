@@ -115,6 +115,13 @@ BEGIN
     RAISE EXCEPTION 'unexpected effective RPC EXECUTE grants';
   END IF;
 
+  IF has_table_privilege('service_role', 'public.mec_order_idempotency', 'SELECT')
+     OR has_table_privilege('service_role', 'public.mec_order_idempotency', 'INSERT')
+     OR has_table_privilege('service_role', 'mec_private.rate_limit_buckets', 'SELECT')
+     OR has_table_privilege('service_role', 'mec_private.rate_limit_buckets', 'INSERT') THEN
+    RAISE EXCEPTION 'service_role must use the SECURITY DEFINER RPC boundary, not direct backing-table grants';
+  END IF;
+
   SELECT pg_get_userbyid(p.proowner), p.proconfig
     INTO function_owner, function_settings
   FROM pg_proc p
