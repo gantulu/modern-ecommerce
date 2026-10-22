@@ -44,7 +44,7 @@ Deno.serve(async req => {
   }
   const { data: attempts, error: attemptsErr } = await db.from("mec_payments").select("payment_status").eq("order_id", order.id);
   if (attemptsErr) return out({ error: "Payment attempt lookup failed" }, 500);
-  if ((attempts ?? []).some(p => ["paid","pending","requesting","unknown"].includes(p.payment_status))) return out({ error: "Existing attempt requires reconciliation before a new attempt" }, 409);
+  if ((attempts ?? []).some(p => ["created","paid","pending","requesting","unknown"].includes(p.payment_status))) return out({ error: "Existing attempt requires reconciliation before a new attempt" }, 409);
   const { data: items, error: itemsErr } = await db.from("mec_order_items").select("product_name_snapshot,unit_price_idr,quantity").eq("order_id", order.id);
   if (itemsErr || !items?.length) return out({ error: "Order items unavailable" }, 500);
   const itemDetails = items.map(i => ({ name: String(i.product_name_snapshot).slice(0,50), price: Number(i.unit_price_idr), quantity: Number(i.quantity) }));
@@ -57,7 +57,43 @@ Deno.serve(async req => {
     currency: "IDR", payment_status: "requesting", idempotency_key: idem,
     expires_at: new Date(Date.now()+expiry*60000).toISOString()
   }).select("id").single();
-  if (insertErr || !payment) return out({ error: "Payment attempt could not be created" }, 500);
+  if (insertErr || !payment) {
+    if (insertErr?.code === "23505") {
+      // The database's partial unique index is the concurrency authority.
+      // A parallel request may have won either the idempotency-key or
+      // order-level active-attempt constraint after the preflight reads above.
+      const { data: sameKey, error: sameKeyErr } = await db.from("mec_payments")
+        .select("id,order_id,merchant_order_id,amount_idr,payment_status,payment_url,provider_reference,expires_at")
+        .eq("idempotency_key", idem).maybeSingle();
+      if (sameKeyErr) return out({ error: "Payment attempt exists; reconcile before retrying" }, 409);
+      if (sameKey) {
+        if (sameKey.order_id !== order.id || Number(sameKey.amount_idr) !== amount) {
+          return out({ error: "Idempotency key conflict" }, 409);
+        }
+        if (["pending", "paid"].includes(sameKey.payment_status)) {
+          return out({ payment: sameKey, reused: true });
+        }
+        return out({
+          error: "Payment attempt is already being created or has an unresolved outcome; reconcile before retrying",
+          payment_status: sameKey.payment_status,
+          merchant_order_id: sameKey.merchant_order_id,
+        }, 409);
+      }
+      const { data: activeAttempt, error: activeErr } = await db.from("mec_payments")
+        .select("merchant_order_id,payment_status")
+        .eq("order_id", order.id)
+        .in("payment_status", ["created", "requesting", "pending", "unknown", "paid"])
+        .maybeSingle();
+      if (activeErr) return out({ error: "Payment attempt exists; reconcile before retrying" }, 409);
+      return out({
+        error: "Another payment attempt already owns this order; reconcile it before creating another",
+        payment_status: activeAttempt?.payment_status ?? "unknown",
+        merchant_order_id: activeAttempt?.merchant_order_id ?? null,
+      }, 409);
+    }
+    console.error("MEC payment-attempt insert failed", { code: insertErr?.code ?? "no_result" });
+    return out({ error: "Payment attempt could not be created" }, 500);
+  }
   const timestamp = String(Date.now()), signature = await hmac(merchant + timestamp, apiKey);
   const callbackUrl = url.replace(/\/$/,"") + "/functions/v1/mec-duitku-callback";
   const body: Record<string,unknown> = {
