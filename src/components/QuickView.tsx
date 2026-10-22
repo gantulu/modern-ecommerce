@@ -1,6 +1,6 @@
 import { useState, useEffect, memo } from 'react';
 import { X, ShoppingCart, Star, Plus, Minus } from 'lucide-react';
-import { Product } from '../types/supabase';
+import type { Product } from '../types/supabase';
 import { useCartStore } from '../store/cartStore';
 
 const formatIDR = (amount: number) => new Intl.NumberFormat('id-ID', {
