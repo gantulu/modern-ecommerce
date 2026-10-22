@@ -11,7 +11,7 @@
 - Non-MEC tables may be mentioned only as read-only audit evidence explaining existing mismatches, never as a proposed operational source.
 
 
-Status: **CONTRACT DEFINED; SOURCE AND PRICE SEMANTICS BLOCKED. No catalog migration is authorized or included.**
+Status: **MEC-only frontend contract implemented in this branch; native catalog population, storage bucket provisioning, and product activation remain pending. No catalog migration is authorized or included.**
 
 ## Purpose
 
