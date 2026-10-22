@@ -11,6 +11,8 @@ DECLARE
   retry_id uuid;
   function_owner text;
   function_settings text[];
+  first_release boolean;
+  second_release boolean;
 BEGIN
   SELECT order_id INTO first_id
   FROM public.mec_create_order_idempotent(
@@ -144,6 +146,18 @@ BEGIN
   IF function_owner <> current_user OR NOT (function_settings @> ARRAY['search_path=""']) THEN
     RAISE EXCEPTION 'RPC owner/search_path fixture assertion failed: owner %, settings %',
       function_owner, function_settings;
+  END IF;
+
+  -- Releasing the same reservation twice must restore inventory only once.
+  SELECT public.mec_release_order_inventory(retry_id, 'cancelled') INTO first_release;
+  SELECT public.mec_release_order_inventory(retry_id, 'cancelled') INTO second_release;
+  IF first_release IS DISTINCT FROM true OR second_release IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'inventory release was not idempotent: first %, second %',
+      first_release, second_release;
+  END IF;
+  IF (SELECT stock_quantity FROM public.mec_products WHERE id='11111111-1111-4111-8111-111111111111') <> 99
+     OR (SELECT inventory_reservation_status FROM public.mec_orders WHERE id=retry_id) <> 'released' THEN
+    RAISE EXCEPTION 'repeated release changed stock more than once or failed to release order';
   END IF;
 END
 $$;
