@@ -1,0 +1,49 @@
+name: MEC order idempotency SQL tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feat/mec-order-idempotency-draft]
+  workflow_dispatch:
+
+jobs:
+  postgres-contract-and-concurrency:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+      - name: Bootstrap minimal Supabase Auth fixture
+        run: psql -X -v ON_ERROR_STOP=1 -f tests/sql/mec-order-idempotency-fixture-bootstrap.sql
+      - name: Apply actual MEC schema migration to disposable PostgreSQL
+        run: psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261022180316_create_mec_ecommerce_v1.sql
+      - name: Seed disposable MEC products and rollback trigger
+        run: psql -X -v ON_ERROR_STOP=1 -f tests/sql/mec-order-idempotency-fixture.sql
+      - name: Apply draft SQL to disposable PostgreSQL
+        run: psql -X -v ON_ERROR_STOP=1 -f docs/proposed-migrations/20261023_mec_order_idempotency_rate_limit_DRAFT.sql
+      - name: Run SQL contract smoke tests
+        run: psql -X -v ON_ERROR_STOP=1 -f tests/sql/mec-order-idempotency-smoke.sql
+      - name: Run concurrent idempotency and rate-limit tests
+        run: bash tests/sql/mec-order-idempotency-concurrency.sh
