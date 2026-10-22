@@ -1,5 +1,7 @@
 # ModernShop - E-commerce Platform
 
+> **AI Team / AI Agent Instructions:** Before auditing, planning, or changing this repository, read and follow [`instruction.md`](instruction.md). It defines the AI Consultant Team roles, required workflow, evidence standards, security boundaries, and approval requirements. If this README conflicts with `instruction.md` on AI workflow or execution rules, follow `instruction.md`.
+
 ![ModernShop Banner](https://images.unsplash.com/photo-1523275335684-37898b6baf30?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80)
 
 ## Overview
@@ -78,10 +80,10 @@ ModernShop is a modern, feature-rich e-commerce platform built with React, TypeS
   /components      # Reusable UI components
   /lib             # Utility functions and libraries
   /pages           # Page components
-  /store           # Zustand store definitions
-  /types           # TypeScript type definitions
-  App.tsx          # Main application component
-  main.tsx         # Application entry point
+  /store            # Zustand store definitions
+  /types            # TypeScript type definitions
+  App.tsx           # Main application component
+  main.tsx          # Application entry point
 /supabase
   /migrations      # Database migrations
   /consolidated    # Consolidated migration for new environments
