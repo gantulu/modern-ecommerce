@@ -7,6 +7,10 @@ DECLARE
   conflict_seen boolean := false;
   null_limit_rejected boolean := false;
   order_count bigint;
+  rollback_failure_seen boolean := false;
+  retry_id uuid;
+  function_owner text;
+  function_settings text[];
 BEGIN
   SELECT order_id INTO first_id
   FROM public.mec_create_order_idempotent(
@@ -70,5 +74,54 @@ BEGIN
   IF NOT null_limit_rejected THEN
     RAISE EXCEPTION 'NULL rate-limit window was not rejected';
   END IF;
+
+  -- A failed order operation must roll back both the key claim and order row.
+  BEGIN
+    PERFORM * FROM public.mec_create_order_idempotent(
+      'rollback-retry-key-00001', repeat('9', 64), 'ROLLBACK_TEST',
+      'rollback@example.com', '5550199',
+      '[{"product_id":"fixture","quantity":1}]'::jsonb,
+      NULL, repeat('8', 64), 15
+    );
+  EXCEPTION WHEN SQLSTATE 'P0001' THEN
+    rollback_failure_seen := true;
+  END;
+  IF NOT rollback_failure_seen THEN
+    RAISE EXCEPTION 'fixture failure was not triggered';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.mec_order_idempotency WHERE idempotency_key='rollback-retry-key-00001')
+     OR (SELECT count(*) FROM public.mec_orders) <> 1 THEN
+    RAISE EXCEPTION 'failed order call left partial idempotency/order rows';
+  END IF;
+
+  -- Same key is reusable after rollback, because no claim was committed.
+  SELECT order_id INTO retry_id
+  FROM public.mec_create_order_idempotent(
+    'rollback-retry-key-00001', repeat('9', 64), 'Retry Customer',
+    'retry@example.com', '5550198',
+    '[{"product_id":"fixture","quantity":1}]'::jsonb,
+    NULL, repeat('8', 64), 15
+  );
+  IF retry_id IS NULL OR (SELECT count(*) FROM public.mec_orders) <> 2 THEN
+    RAISE EXCEPTION 'same key could not be retried after transaction rollback';
+  END IF;
+
+  IF has_function_privilege('anon',
+       'public.mec_create_order_idempotent(text,text,text,text,text,jsonb,uuid,text,integer)', 'EXECUTE')
+     OR has_function_privilege('authenticated',
+       'public.mec_create_order_idempotent(text,text,text,text,text,jsonb,uuid,text,integer)', 'EXECUTE')
+     OR NOT has_function_privilege('service_role',
+       'public.mec_create_order_idempotent(text,text,text,text,text,jsonb,uuid,text,integer)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'unexpected effective RPC EXECUTE grants';
+  END IF;
+
+  SELECT pg_get_userbyid(p.proowner), p.proconfig
+    INTO function_owner, function_settings
+  FROM pg_proc p
+  WHERE p.oid = 'public.mec_create_order_idempotent(text,text,text,text,text,jsonb,uuid,text,integer)'::regprocedure;
+  IF function_owner <> current_user OR NOT (function_settings @> ARRAY['search_path=""']) THEN
+    RAISE EXCEPTION 'RPC owner/search_path fixture assertion failed: owner %, settings %',
+      function_owner, function_settings;
+  END IF;
 END
-$$;
+$;
