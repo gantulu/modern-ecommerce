@@ -176,3 +176,8 @@ No live SQL, catalog data, secrets, Edge Functions, payment requests, or deploym
 - Redirect/JS callback `resultCode` is for user-facing feedback only and must not change stored payment state. Use the signed server-to-server HTTP callback as the provider status signal.
 - The reviewed POP reference does not document a POP transaction-status inquiry endpoint. Do not invent one or substitute a Disbursement/SNAP endpoint. For `unknown`, retain the blocking state and reconcile from a valid callback, Duitku dashboard/report + provider-supported resend, or a documented merchant support procedure. Obtain written provider confirmation before implementing an automated inquiry job.
 - No Sandbox payment test has been started. It remains gated on explicit authorization.
+
+
+### CI status snapshot — 2026-10-23
+- Fresh checkout workflow: [39869943212](https://github.com/gantulu/modern-ecommerce/actions/runs/39869943212) is in progress. Its frontend job includes the new dependency audit report and reruns build + lint; do not treat either the lint or package-level audit as complete until the workflow finishes.
+- Payment-attempt guard workflow: [39869942992](https://github.com/gantulu/modern-ecommerce/actions/runs/39869942992) is in progress.
