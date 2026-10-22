@@ -9,6 +9,12 @@ on:
       - 'supabase/functions/mec-create-order/**'
       - 'supabase/functions/mec-duitku-create-invoice/**'
       - '.github/workflows/mec-checkout-draft-checks.yml'
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig*.json'
+      - 'vite.config.*'
+      - 'eslint.config.*'
 
 permissions:
   contents: read
@@ -25,3 +31,18 @@ jobs:
         run: deno check supabase/functions/mec-create-order/index.ts
       - name: Type-check MEC Duitku Create Invoice
         run: deno check supabase/functions/mec-duitku-create-invoice/index.ts
+
+  frontend-build-and-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install locked dependencies without install hooks
+        run: npm ci --ignore-scripts
+      - name: Type-check and production build
+        run: npm run build
+      - name: Lint frontend
+        run: npm run lint
