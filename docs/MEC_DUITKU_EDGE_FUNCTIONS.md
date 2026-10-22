@@ -102,3 +102,32 @@ This repository branch does not apply the migration to any database, deploy Edge
 - Create Invoice retains a preflight lookup for a friendly response, but preflight reads alone do not prevent races. The new draft partial unique index blocks more than one payment row in `created`, `requesting`, `pending`, `unknown`, or `paid` state per order. Concurrent unique-violation handling rereads the existing attempt and returns a conflict/reuse response without issuing another provider request.
 - The payment-attempt index is in `docs/proposed-migrations/20261023_mec_payment_attempt_guard_DRAFT.sql`, deliberately outside `supabase/migrations/`. It includes a preflight that stops if historical duplicate active attempts exist. A disposable SQL test and CI workflow verify the partial-unique-index semantics; neither applies the index to the live database.
 - These changes do not resolve provider inquiry/reconciliation for `unknown` outcomes. Such attempts remain blocked from replacement. The Sandbox end-to-end gate remains closed.
+
+## Audit update — 2026-10-23 (read-only target verification)
+
+Target: Supabase project `No signal` (`oszqantvugvbvydlizix`), PostgreSQL 17.6.
+
+### Verified live state
+
+- The seven MEC tables `mec_products`, `mec_categories`, `mec_product_images`, `mec_orders`, `mec_order_items`, `mec_payments`, and `mec_payment_events` each contained **0 rows** at audit time.
+- The target database exposes `mec_create_order` and `mec_release_order_inventory`, with execution granted to `service_role` but not to `anon` or `authenticated`.
+- The deployed `mec_process_duitku_callback` RPC is owned by `postgres`, is `SECURITY DEFINER`, fixes `search_path=pg_catalog, public`, and is executable by `service_role` only.
+- The target database does **not** expose the proposed `mec_create_order_idempotent` RPC. PR #4's order-idempotency SQL remains a draft dependency and has not been applied.
+- Read-only inspection did not identify a MEC payment-status lookup/reconciliation endpoint. No new status endpoint or reconciliation worker is implemented in this branch at this point.
+
+### Payment-state and callback assessment
+
+The branch Create Invoice function checks that an order is `pending_payment` with inventory `reserved`, derives the amount from `mec_orders.total_amount`, reconciles order-item line totals, and blocks new attempts when an existing attempt is `created`, `requesting`, `pending`, `unknown`, or `paid`. A unique-constraint conflict is handled without deliberately sending a second provider request. These are code-level findings only; the proposed partial unique index is not installed in the target database.
+
+The callback RPC contract and prior rolled-back synthetic SQL test provide evidence for atomic event deduplication, row locking, amount validation, paid-state protection, and the late-success-after-reservation-release anomaly path. They do **not** prove live Duitku Sandbox behavior. A return redirect is not payment authority.
+
+### Still unverified / blocking
+
+- End-to-end Sandbox Create Invoice and signed callback, including actual provider request/response and signature interoperability.
+- Duplicate and reordered callbacks, invalid signature, amount mismatch, failure after success, provider timeout/unknown outcome, and success after reservation release.
+- Read-only payment status lookup and a documented reconciliation mechanism for `unknown`; until implemented, `unknown` must remain blocking and must not trigger automatic replacement attempts.
+- Target-schema validation of the payment-attempt partial unique index and realistic concurrent insert behavior.
+- Effective grants/ownership for the proposed order-idempotency RPC, which does not exist in the target schema.
+- Frontend return route and actual CORS origin.
+
+No live SQL, catalog data, secrets, Edge Functions, payment requests, or deployment were changed during this audit. PR #4 and PR #5 remain drafts.
