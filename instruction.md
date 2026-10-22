@@ -1,7 +1,7 @@
-# AI TEAM — SYSTEM INSTRUCTIONS V1.2
+# AI TEAM — SYSTEM INSTRUCTIONS V1.3
 ## Repository: `gantulu/modern-ecommerce`
 
-> Versi 1.2 adalah revisi aditif dari V1.1. Versi ini menambahkan matriks audit repository wajib, pemetaan integrasi frontend–backend, validitas pengujian, konsistensi kontrak, bukti runtime, dan release blockers. Seluruh aturan keselamatan serta keputusan V1.1 tetap berlaku.
+> Versi 1.3 adalah revisi aditif dari V1.2. Semua aturan dan keputusan V1.1/V1.2 tetap dipertahankan. V1.3 menambahkan konsistensi status verifikasi, bukti alur end-to-end, pemeriksaan identitas/provenance repository, integritas dependency/build/CI, keamanan batas pembayaran/data, dan aturan pemeliharaan versi.
 
 ## 1. Misi dan konteks repository
 
@@ -344,3 +344,124 @@ Daftar ini adalah pemicu pemeriksaan, bukan klaim bahwa setiap item pasti bermas
 - Implementasi dianggap selesai hanya jika acceptance criteria yang disetujui terpenuhi dan hasil verifikasi dilaporkan; tidak cukup hanya mengedit file atau membuat function.
 - Jika ada dependensi yang belum dapat diverifikasi, selesaikan bagian lain yang aman dan tandai gap spesifik; jangan menyamarkan ketidakpastian.
 - Pertahankan semua batas persetujuan, isolasi MEC, dan aturan pelestarian artefak pada V1.1. Bagian V1.2 ini bersifat tambahan dan tidak memberi izin baru untuk tindakan sensitif.
+
+
+## 15. Consistency, Provenance, and Verification Controls (V1.3 — additive)
+
+Bagian ini menambahkan kontrol konsistensi dan bukti untuk memperjelas penerapan bagian sebelumnya. Tidak ada bagian V1.1 atau V1.2 yang dicabut atau digantikan. Jika dua aturan tampak bertentangan, pertahankan batas keamanan dan persetujuan yang lebih ketat, dokumentasikan konflik, dan jangan menjalankan tindakan sensitif sampai konflik diselesaikan.
+
+### 15.1 Unified verification status model
+
+Gunakan satu model status dengan makna tetap di seluruh audit, evidence ledger, test report, dan release-blocker list:
+
+- `PASS`: pemeriksaan atau acceptance criterion tertentu benar-benar dijalankan dan memenuhi kriteria yang dinyatakan. Catat bukti serta batas cakupannya.
+- `FAIL`: pemeriksaan benar-benar dijalankan dan menunjukkan kriteria tidak terpenuhi.
+- `VERIFIED`: klaim faktual spesifik didukung bukti yang cukup untuk konteksnya; ini bukan pengganti hasil tes.
+- `PARTIALLY VERIFIED`: sebagian klaim didukung bukti, tetapi masih ada bagian penting yang belum terbukti.
+- `NOT RUN`: pemeriksaan yang direncanakan belum dijalankan.
+- `BLOCKED`: pemeriksaan tidak dapat dilaksanakan karena akses, dependensi, izin, atau prasyarat yang jelas belum tersedia.
+- `UNKNOWN`: bukti yang tersedia tidak cukup untuk menentukan status.
+- `NOT IMPLEMENTED`: fungsi atau kontrol yang disyaratkan belum ditemukan dalam cakupan yang diperiksa.
+- `AWAITING APPROVAL`: langkah berikutnya membutuhkan persetujuan eksplisit yang belum diberikan.
+
+Aturan penerapan:
+- Pilih status yang paling spesifik untuk setiap klaim; jangan menyamakan status temuan, status tes, status implementasi, dan status runtime.
+- Satu temuan boleh memiliki status verifikasi klaim dan status tes yang berbeda. Catat keduanya bila relevan.
+- Status `PASS` harus menyebut pemeriksaan, kriteria, perintah/metode, hasil, dan bukti. Exit code 0 saja bukan bukti tes bermakna.
+- Jangan memberi `VERIFIED` pada status deployment, migration live, konfigurasi secrets, atau perilaku runtime hanya berdasarkan source code atau dokumentasi internal.
+- Jika status antarbagian berbeda, rekonsiliasi sebelum menyimpulkan; jika belum terselesaikan, nyatakan konflik dan gunakan `UNKNOWN` atau `PARTIALLY VERIFIED` sesuai bukti.
+
+### 15.2 End-to-end business-flow evidence
+
+Untuk audit checkout dan pembayaran, telusuri jalur aktual dari awal hingga hasil yang dilihat pengguna. Petakan setidaknya:
+
+1. Sumber katalog dan harga yang ditampilkan.
+2. Cart/state dan sumber kuantitas.
+3. Validasi harga, stok, identitas pengguna atau guest token di server.
+4. Pembuatan order, item snapshot, dan reservasi inventori.
+5. Pembuatan payment attempt dan request Create Invoice.
+6. Respons provider, penyimpanan referensi/URL, serta perilaku timeout atau hasil ambigu.
+7. Callback: signature, merchant order ID, amount, result code, deduplikasi, dan transaksi database atomik.
+8. Return/redirect, pembacaan ulang status dari backend, order tracking, serta riwayat pesanan.
+9. Penanganan error, retry, rekonsiliasi, dan dampak terhadap stok/order/payment.
+
+Untuk setiap langkah, catat caller, file/simbol, endpoint atau RPC, tabel/kolom, otorisasi, status aktual, dan bukti pengujian. Tunjukkan secara eksplisit bagian yang belum terhubung atau masih memakai legacy tables/mock. Keberadaan komponen pada tiap lapisan tidak membuktikan bahwa semua lapisan tersambung.
+
+Bedakan bukti berikut:
+- inspeksi source code;
+- pemeriksaan statis atau build lokal;
+- unit/integration/SQL/concurrency test;
+- sandbox end-to-end;
+- pemeriksaan read-only runtime;
+- verifikasi production.
+
+Jangan menyimpulkan level bukti yang lebih tinggi dari pengujian yang dilakukan. Jika sandbox atau runtime tidak dapat diakses, tandai pemeriksaan terkait `NOT RUN` atau `BLOCKED` dan jelaskan apa yang diperlukan untuk menyelesaikannya.
+
+### 15.3 Repository identity and provenance
+
+Pada awal audit dan sebelum menulis file:
+- Verifikasi nama owner/repository, URL repository yang diperiksa, branch/ref, commit SHA, serta path target.
+- Bandingkan metadata `repository` di `package.json`, README, remote/upstream yang dapat diperiksa, dan target repository. URL yang berbeda merupakan discrepancy untuk diselidiki, bukan bukti otomatis bahwa repository salah.
+- Identifikasi fork/upstream hanya bila metadata atau API repository mendukung kesimpulan tersebut. Jangan menebak hubungan repository.
+- Sebelum setiap write, fetch versi file terbaru dan SHA yang berlaku pada branch target. Jangan menulis menggunakan SHA lama.
+- Setelah write, fetch ulang file dari branch yang sama dan verifikasi isi serta perubahan yang dimaksud. Catat commit SHA dan blob SHA dari hasil yang dikembalikan tool.
+- Jika repository, branch, target file, atau provenance tidak dapat dipastikan, jangan menulis; laporkan `BLOCKED` dan bukti yang kurang.
+
+### 15.4 Dependency, build, lint, and CI integrity
+
+Audit konfigurasi proyek sesuai cakupan:
+- `package.json` scripts, package manager, lockfile, runtime/toolchain versions, build/type-check/lint/test scripts;
+- konfigurasi test runner, TypeScript, ESLint, Vite, dan CI workflows yang tersedia;
+- dependency lifecycle scripts (termasuk install/postinstall) serta skrip deployment atau migration;
+- kesesuaian antara dokumentasi perintah dan perintah aktual.
+
+Jangan menjalankan deployment, migration, install script yang tidak dipercaya, atau perintah yang mengubah layanan live dalam audit read-only. Jika instalasi dependency diperlukan, evaluasi lifecycle scripts dan batas dampak terlebih dahulu. Jangan mengklaim dependency aman hanya karena instalasi/build berhasil.
+
+Laporan harus memisahkan hasil:
+- dependency/lockfile inspection;
+- lint;
+- type-check;
+- build;
+- unit/integration tests;
+- SQL/migration validation;
+- security/concurrency tests;
+- sandbox end-to-end;
+- CI status.
+
+Catat perintah persis, commit/ref, environment, exit code/output relevan, dan apa yang tidak tercakup. Jika tidak ada lockfile, CI, atau test suite, laporkan sebagai fakta/gap yang relevan; jangan membuat hasil pengujian fiktif.
+
+### 15.5 Payment boundary, URL, and data-handling security
+
+Untuk integrasi payment gateway, audit sekurang-kurangnya:
+- URL endpoint provider, callback URL, return URL, payment URL, redirect handling, dan kebijakan host/protocol sesuai kontrak resmi serta konfigurasi yang diizinkan;
+- validasi respons provider sebelum menyimpan atau mengembalikan reference, status, dan payment URL;
+- larangan memperlakukan browser return/redirect sebagai bukti pembayaran berhasil; status otoritatif harus berasal dari backend yang memverifikasi provider;
+- pencatatan data minimum yang diperlukan pada log dan event payload, akses ke event, retensi, serta penanganan data pribadi atau metadata pembayaran;
+- pemisahan variabel publik frontend dari kredensial server-side; periksa nama dan lokasi penggunaannya tanpa membaca atau menampilkan nilai secret;
+- penanganan error provider/database agar tidak membocorkan credential, token guest mentah, payload sensitif, atau detail internal yang tidak perlu;
+- validasi konfigurasi environment dan host tanpa mengasumsikan konfigurasi live telah terpasang.
+
+Rujuk dokumentasi resmi provider yang sesuai dengan produk/versi merchant aktual. Jika kontrak resmi atau konfigurasi merchant tidak dapat diverifikasi, nyatakan gap secara eksplisit dan jangan mengarang endpoint, field, algoritme signature, atau status callback.
+
+### 15.6 Change traceability, precedence, and regression
+
+Setiap revisi instruksi harus:
+- bersifat aditif secara default; mempertahankan keputusan, batasan, referensi, dan aturan yang masih berlaku dari versi sebelumnya;
+- menambahkan ringkasan perubahan versi yang memuat versi dasar, bagian yang ditambah, alasan, serta area yang sengaja tidak diubah;
+- mempertahankan workflow dan aturan persetujuan. Revisi instruksi tidak dengan sendirinya memberi izin melakukan perubahan source code, database, secrets, deployment, atau penghapusan data;
+- memeriksa duplikasi, konflik istilah, link/path yang usang, nomor bagian, status model, dan konsistensi acceptance criteria;
+- setelah update, membaca ulang file dari GitHub dan memeriksa header versi, bagian baru, keberadaan aturan penting versi sebelumnya, serta format yang rusak;
+- melaporkan hasil verifikasi dokumentasi secara terpisah dari hasil audit aplikasi/runtime.
+
+Jika instruksi lama bertentangan dengan fakta repository yang baru ditemukan, jangan diam-diam mengubah source-of-truth atau keputusan terkunci. Laporkan discrepancy, rekomendasikan perubahan, dan ikuti batas persetujuan yang berlaku.
+
+### 15.7 Completion gate
+
+Audit instruksi atau repository baru boleh dinyatakan selesai jika:
+- cakupan dan commit/ref yang diperiksa dinyatakan;
+- temuan ditautkan ke bukti yang bisa diperiksa;
+- status tes dan status klaim dibedakan;
+- gap, blocker, dan keterbatasan akses ditampilkan;
+- rekomendasi mempunyai tindakan dan acceptance criteria yang dapat diverifikasi.
+
+Pembaruan dokumen dinyatakan terverifikasi hanya setelah file hasil ditarik ulang dari branch target dan perubahan yang dimaksud diperiksa. Ini tidak berarti aplikasi, database live, pembayaran sandbox, atau deployment telah diverifikasi.
