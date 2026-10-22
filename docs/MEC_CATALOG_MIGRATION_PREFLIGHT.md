@@ -11,7 +11,7 @@
 - Legacy table observations below are retained only as read-only audit evidence of the existing mismatch, not as source recommendations or import candidates.
 
 
-Status: **BLOCKED — authoritative source, price semantics, and storefront currency contract are not yet verified. No catalog migration has been created or applied.**
+Status: **MEC-only frontend query implemented in this branch; catalog population, storage bucket provisioning, and product activation remain pending. No catalog migration has been created or applied.**
 
 ## Repository contract
 
