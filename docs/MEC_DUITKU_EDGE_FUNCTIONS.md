@@ -131,3 +131,12 @@ The callback RPC contract and prior rolled-back synthetic SQL test provide evide
 - Frontend return route and actual CORS origin.
 
 No live SQL, catalog data, secrets, Edge Functions, payment requests, or deployment were changed during this audit. PR #4 and PR #5 remain drafts.
+
+## Cross-PR order and inventory verification update — 2026-10-23
+
+- PR #4 remains the canonical order-idempotency contract; the current head is still a draft and the proposed RPC/table are absent from the live target database.
+- PR #4 expanded disposable CI to apply the actual MEC schema migration and test the actual `mec_private.create_order` routine: same-key replay, same-key conflict, rollback after stock decrement/order-item insertion, same-key retry, two different keys competing for the last stock unit, and idempotent inventory release. SQL run [39868701615](https://github.com/gantulu/modern-ecommerce/actions/runs/39868701615) and Deno run [39868701695](https://github.com/gantulu/modern-ecommerce/actions/runs/39868701695) passed.
+- This is stronger transaction evidence than the previous simplified fixture, but it is still disposable PostgreSQL, not a test against live data or proof of Supabase default privileges. Remaining transaction cases include overlapping multi-product lock/deadlock behavior and the callback-success vs reservation-release race.
+- PR #5's payment-attempt partial unique index remains draft-only. Its previous disposable CI passed the partial-index semantics and two concurrent different-key inserts; the new PR #4 order/inventory tests do not install the payment index in the live database or prove payment provider behavior.
+- Step 2 outcome: order creation and inventory decrement are atomic in the actual MEC routine and are now covered by schema-based disposable tests. Step 3 remains blocked on a verified payment status/inquiry contract and reconciliation path for `unknown`; no replacement attempt should be created automatically.
+- No live migration, deployment, secret change, payment submission, or merge was performed. PR #5 remains draft.
