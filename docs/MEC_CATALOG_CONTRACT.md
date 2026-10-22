@@ -1,5 +1,16 @@
 # MEC Catalog Contract Alignment (provisional)
 
+## Locked source boundary — owner decision
+
+**MEC may use only tables whose names begin with `mec_` as operational data sources.** This is a hard scope constraint.
+
+- MEC product/category reads, storefront queries, cart identity, checkout validation, pricing, stock, and order creation must use MEC-prefixed tables only.
+- `public.products`, `public.applestore`, Google Sheets, and other non-`mec_` tables/systems are out of scope as MEC data sources. Do not join them, read them for live MEC behavior, copy/import their rows, or derive MEC prices/stock from them.
+- The live `mec_products` and `mec_categories` tables are empty. That means the MEC-native catalog still needs an explicitly approved population plan; it does **not** authorize fallback to a non-MEC source.
+- Current frontend code that queries `public.products` is a contract violation to fix in a separately reviewed code change. Do not silently switch to another legacy table.
+- Non-MEC tables may be mentioned only as read-only audit evidence explaining existing mismatches, never as a proposed operational source.
+
+
 Status: **CONTRACT DEFINED; SOURCE AND PRICE SEMANTICS BLOCKED. No catalog migration is authorized or included.**
 
 ## Purpose
@@ -76,10 +87,10 @@ Do not draft or apply a catalog migration until the source and price semantics a
 - Preflight counts/samples, dry-run mapping results, duplicate checks, SQL validation, concurrency tests, and sandbox payment tests are ready before rollout.
 
 
-## Additional source lead from a related repository — not yet authoritative
+## Out-of-scope audit evidence — not an MEC source
 
-A follow-up read-only search found catalog display configuration in [gantulu/oktavia/app/all.json](https://github.com/gantulu/oktavia/blob/2a3162afc5dd8e148a96b9a5f7bcfbc6ae3cc04f/app/all.json) and [app/home/flashSale.json](https://github.com/gantulu/oktavia/blob/2a3162afc5dd8e148a96b9a5f7bcfbc6ae3cc04f/app/home/flashSale.json). It reads a Google Sheet through OpenSheet and displays sale_price as primary when present, otherwise price; it also transforms quantity_to_sell_on_facebook using minMax(1, 99). This is evidence of a related storefront's display configuration only, not proof that the sheet feeds the live modern-ecommerce catalog or defines checkout semantics. It does not establish currency/unit or real sellable stock.
+A follow-up read-only search found catalog display configuration in [gantulu/oktavia/app/all.json](https://github.com/gantulu/oktavia/blob/2a3162afc5dd8e148a96b9a5f7bcfbc6ae3cc04f/app/all.json) and [app/home/flashSale.json](https://github.com/gantulu/oktavia/blob/2a3162afc5dd8e148a96b9a5f7bcfbc6ae3cc04f/app/home/flashSale.json). It reads a Google Sheet through OpenSheet and displays sale_price as primary when present, otherwise price; it also transforms quantity_to_sell_on_facebook using minMax(1, 99). This is evidence of a separate storefront only. Under the locked source boundary above, the related sheet/configuration must not feed MEC behavior and must not be imported into MEC. It does not establish currency/unit or real sellable stock.
 
 The one live public.products sample includes a 128GB sale effective interval of 2026-04-01 through 2026-04-10, which has expired as of 2026-10-23. Do not use that sample's sale price as current checkout price without a verified effective-date policy.
 
-The contract remains blocked pending confirmation of source ownership/provenance, currency/unit, promotion eligibility and date handling, and authoritative sellable stock. No catalog migration is authorized.
+The contract remains blocked pending confirmation of the MEC-native catalog population method, price/unit semantics, promotion eligibility/date handling, and authoritative sellable stock. No catalog migration or non-MEC import is authorized.
