@@ -157,3 +157,22 @@ No live SQL, catalog data, secrets, Edge Functions, payment requests, or deploym
 - The POP API reference reviewed for this audit does not document a POP transaction Inquiry Status endpoint. Other Duitku products (for example Disbursement or SNAP) expose different inquiry APIs and must not be assumed compatible with POP.
 - Therefore, do not invent an inquiry URL, request signature, response schema, or cron-based reconciliation API. For an unresolved Create Invoice outcome (`unknown`), keep the attempt blocking and use callback evidence or an explicitly approved merchant-dashboard/manual support process until Duitku confirms a supported POP inquiry contract.
 - Step 3 implementation remains blocked on official confirmation of a supported POP status inquiry/reconciliation mechanism and the frontend order/payment status endpoint contract. No payment attempt or live change was made.
+
+
+## Verification follow-up — lint, dependencies, and POP reconciliation (2026-10-23)
+
+### Frontend lint
+- The last completed frontend run, [39869471623](https://github.com/gantulu/modern-ecommerce/actions/runs/39869471623), passed TypeScript + Vite production build but failed lint with nine existing findings: unused caught error in `scripts/deploy.js`; unused signup response binding and an explicit `any` catch in `src/pages/Auth.tsx`; three unused icon imports in `src/pages/Sitemap.tsx`; and three explicit `any` types in `src/store/authStore.ts`.
+- The draft branch has now removed the unused bindings/imports and replaced `any` with typed/unknown-safe error handling. A fresh CI run is required before calling lint clean.
+
+### Dependency findings
+- The previous `npm ci` output reported 38 audit findings: 4 low, 6 moderate, and 28 high. This is a count, not yet a reviewed package-by-package assessment.
+- Added a CI report step that runs `npm audit --json` and emits severity, direct/transitive classification, affected range, and fix availability without running `npm audit fix`, changing package versions, or rewriting the lockfile. The exact package-level report must be reviewed from the new run before deciding on minimal updates.
+
+### Verified POP reconciliation contract
+- Official POP reference: https://docs.duitku.com/pop/id/
+- Create Invoice is HTTP POST to the documented sandbox endpoint `https://api-sandbox.duitku.com/api/merchant/createInvoice` (production endpoint is documented separately). Its response contains `reference`, `paymentUrl`, `statusCode`, and `statusMessage`; persist `reference` for tracing. Duitku warns that requests for the same order ID may return the same response for five minutes and that repeated Create Invoice requests can return HTTP 409 while a transaction is in progress. This supports keeping `unknown` attempts blocking and not blindly retrying.
+- Callback is HTTP POST `application/x-www-form-urlencoded`. The documented signature is HMAC-SHA256 of `merchantCode + amount + merchantOrderId`, keyed with the merchant API key. Callback delivery can be retried when HTTP 200 is not received (documentation states up to five attempts); return HTTP 200 only after durable processing or durable anomaly recording.
+- Redirect/JS callback `resultCode` is for user-facing feedback only and must not change stored payment state. Use the signed server-to-server HTTP callback as the provider status signal.
+- The reviewed POP reference does not document a POP transaction-status inquiry endpoint. Do not invent one or substitute a Disbursement/SNAP endpoint. For `unknown`, retain the blocking state and reconcile from a valid callback, Duitku dashboard/report + provider-supported resend, or a documented merchant support procedure. Obtain written provider confirmation before implementing an automated inquiry job.
+- No Sandbox payment test has been started. It remains gated on explicit authorization.
