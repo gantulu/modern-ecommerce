@@ -7,7 +7,7 @@
 - Allowed operational table family: `mec_*` only.
 - `public.products`, `public.applestore`, Google Sheets, and other non-`mec_` sources are out of scope for MEC. They must not be joined, queried for live MEC behavior, or imported/copied into MEC.
 - The live MEC product and category tables are empty. No fallback to a non-MEC table is permitted; the MEC-native catalog population method requires a separate explicit decision.
-- This branch now reads the storefront catalog through `src/lib/mecCatalog.ts`, using `mec_products`, `mec_categories`, and `mec_product_images`; the public storefront remains read-only.
+- This branch now reads the storefront catalog through `src/lib/mecCatalog.ts`, using `mec_products`, `mec_categories`, and `mec_product_images`; `ProductDetail` and `ProductGallery` also use the shared MEC catalog/image path. The public storefront remains read-only. Product reviews are not read or written because no MEC-prefixed review table exists.
 - Legacy table observations below are retained only as read-only audit evidence of the existing mismatch, not as source recommendations or import candidates.
 
 
@@ -18,7 +18,7 @@ Status: **MEC-only frontend query implemented in this branch; catalog population
 The frontend Product type in `src/types/supabase.ts` expects:
 - `id` (string identifier), `name`, `description`, numeric `price`, `image_url`, `category`, `stock`, `created_at`, and optional `category_id`.
 
-`src/lib/mecCatalog.ts` reads active MEC products and their category/image relations. Products, Categories, and Featured Products use this helper; prices are mapped from `price_idr`, stock from `stock_quantity`, and category names from `mec_categories`. The checkout cart passes MEC product UUIDs and quantities to server-side order creation; browser prices remain display-only.
+`src/lib/mecCatalog.ts` reads active MEC products and their category/image relations. Products, Categories, Featured Products, and ProductDetail use this helper; prices are mapped from `price_idr`, stock from `stock_quantity`, and category names from `mec_categories`. The checkout cart passes MEC product UUIDs and quantities to server-side order creation; browser prices remain display-only.
 
 There is a presentation mismatch: `src/components/ProductCard.tsx` formats prices with a dollar sign, while `src/pages/Cart.tsx` formats them as IDR. The product filter also starts with a maximum price of 1000, with no verified currency unit. Align display, filters, and cart only after source price/unit is verified; do not treat UI prices as payment authority.
 
