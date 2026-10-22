@@ -43,9 +43,19 @@ This avoids requiring the server to store or reissue plaintext guest tokens. Bro
 7. **No payment proof by redirect:** payment return route must use the read-only status endpoint; redirect query parameters are not authoritative.
 8. **Sandbox only after explicit approval:** no production payments, deployment, migration, or merge is authorized by this draft.
 
+## Follow-up hardening performed on the draft branch
+
+- All three proposed `SECURITY DEFINER` functions now set an empty `search_path`; referenced application tables/functions are schema-qualified.
+- The shared limiter explicitly rejects NULL window, request-limit, and retention parameters.
+- Limiter window comparisons and retry-after calculation use fresh wall-clock timestamps rather than relying solely on a timestamp captured before a possible row-lock wait.
+- The Edge Function rejects declared or streamed request bodies larger than 32 KiB before JSON parsing.
+
+These are draft-only code changes. They do not prove function ownership/grants are safe in the target database, nor do they establish SQL correctness or concurrency behavior.
+
 ## Verification status
 
-- GitHub Actions type-check/format check for this new function: pending.
-- Database migration validation/concurrency tests: not run.
+- Deno type-check/format checks for the latest commit: pending CI result.
+- SQL syntax/runtime validation and concurrent transaction tests: not run.
 - Live Edge Function test: not run.
 - Checkout or guest-token end-to-end: not implemented/verified.
+- Frontend production origin remains unverified; no deployment authorized.
