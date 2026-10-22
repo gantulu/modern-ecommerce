@@ -44,7 +44,7 @@ RETURNS TABLE(
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, public, mec_private
+SET search_path = ''
 AS $function$
 DECLARE
   v_inserted_key text;
@@ -142,15 +142,16 @@ CREATE OR REPLACE FUNCTION public.mec_consume_rate_limit(
 RETURNS TABLE(allowed boolean, remaining integer, retry_after_seconds integer)
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, public, mec_private
+SET search_path = ''
 AS $function$
 DECLARE
   v_row mec_private.rate_limit_buckets%ROWTYPE;
-  v_now timestamptz := clock_timestamp();
+  v_now timestamptz;
 BEGIN
+  v_now := clock_timestamp();
   IF p_bucket_hash IS NULL OR p_bucket_hash !~ '^[0-9a-f]{64}$'
-     OR p_window_seconds < 1 OR p_window_seconds > 3600
-     OR p_max_requests < 1 OR p_max_requests > 10000 THEN
+     OR p_window_seconds IS NULL OR p_window_seconds < 1 OR p_window_seconds > 3600
+     OR p_max_requests IS NULL OR p_max_requests < 1 OR p_max_requests > 10000 THEN
     RAISE EXCEPTION 'Invalid rate-limit parameters' USING ERRCODE = '22023';
   END IF;
 
@@ -160,8 +161,8 @@ BEGIN
   ON CONFLICT (bucket_hash) DO UPDATE SET
     window_started_at = CASE
       WHEN mec_private.rate_limit_buckets.window_started_at
-           + make_interval(secs => p_window_seconds) <= v_now
-      THEN v_now
+           + make_interval(secs => p_window_seconds) <= clock_timestamp()
+      THEN clock_timestamp()
       ELSE mec_private.rate_limit_buckets.window_started_at
     END,
     request_count = CASE
@@ -170,9 +171,10 @@ BEGIN
       THEN 1
       ELSE least(mec_private.rate_limit_buckets.request_count + 1, p_max_requests + 1)
     END,
-    updated_at = v_now
+    updated_at = clock_timestamp()
   RETURNING * INTO v_row;
 
+  v_now := clock_timestamp();
   RETURN QUERY SELECT
     v_row.request_count <= p_max_requests,
     greatest(0, p_max_requests - v_row.request_count),
@@ -198,12 +200,12 @@ CREATE OR REPLACE FUNCTION public.mec_cleanup_rate_limit_buckets(
 RETURNS bigint
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, public, mec_private
+SET search_path = ''
 AS $function$
 DECLARE
   v_deleted bigint;
 BEGIN
-  IF p_retention < interval '1 hour' OR p_retention > interval '30 days' THEN
+  IF p_retention IS NULL OR p_retention < interval '1 hour' OR p_retention > interval '30 days' THEN
     RAISE EXCEPTION 'Invalid retention interval' USING ERRCODE = '22023';
   END IF;
 
