@@ -1,7 +1,9 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { SlidingWindowRateLimiter, rateLimitKey } from "./rate_limit.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL");
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+const statusRateLimiter = new SlidingWindowRateLimiter(30, 60_000);
 
 const allowedOrigins = new Set([
   "https://asricollection.online",
@@ -76,6 +78,16 @@ Deno.serve(async (request: Request) => {
 
   if (request.method !== "GET") {
     return respond({ success: false, error: "METHOD_NOT_ALLOWED" }, 405, origin);
+  }
+
+  const rateLimit = statusRateLimiter.check(rateLimitKey(request));
+  if (!rateLimit.allowed) {
+    const rateHeaders = new Headers(headersFor(origin));
+    rateHeaders.set("retry-after", String(rateLimit.retryAfterSeconds));
+    return new Response(JSON.stringify({ success: false, error: "RATE_LIMITED" }), {
+      status: 429,
+      headers: rateHeaders,
+    });
   }
 
   if (!supabaseUrl || !serviceRoleKey) {
