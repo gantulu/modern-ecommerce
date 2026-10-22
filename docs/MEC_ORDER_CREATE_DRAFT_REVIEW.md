@@ -80,3 +80,21 @@ These are draft-only code changes. They do not prove function ownership/grants a
 - **Reconciliation is not implemented:** the repository's Duitku contract states there is no POP-specific inquiry/reconciliation job, and no payment-status/reconciliation Edge Function was found in the live MEC function set. Unknown Create Invoice outcomes must remain non-retryable until a verified provider inquiry/manual reconciliation process exists; do not create replacement invoices automatically.
 - **Duitku signature contract matches current official docs:** Create Invoice uses HMAC-SHA256 over `merchantCode + timestamp`; callback validation uses HMAC-SHA256 over `merchantCode + amount + merchantOrderId`. The callback RPC is owned by `postgres`, uses a pinned search path, and effective execution is denied to `anon`/ `authenticated` and allowed to `service_role`. Callback state changes are transactional and duplicate events are fingerprint-deduplicated. Still required: Sandbox E2E for invalid signature, amount mismatch, duplicate/reordered callbacks, failure-after-success, and success after reservation release.
 - **Payment return is not authoritative:** the official Duitku docs explicitly say not to update payment state from redirect query parameters. A read-only status endpoint and a reconciliation process remain release gates.
+
+## Audit update — 2026-10-23
+
+### Live target-project evidence (read-only)
+
+- The connected Supabase project is **No signal** (`oszqantvugvbvydlizix`), PostgreSQL 17.6.
+- The live schema contains MEC catalog/order/payment/event tables, but it does **not** contain the proposed `mec_order_idempotency` table or `mec_create_order_idempotent(...)` RPC. The proposed contract cannot yet be validated against the target schema.
+- Live `mec_create_order` and `mec_release_order_inventory` are executable by `service_role`, not by `anon` or `authenticated`. The deployed `mec_process_duitku_callback` is owned by `postgres`, is `SECURITY DEFINER`, has fixed `search_path=pg_catalog, public`, and is executable by `service_role` only. These findings apply to the existing callback RPC, not the proposed order-idempotency RPC.
+- All seven queried MEC catalog/order/payment/event tables contained zero rows at audit time. No live write was performed.
+
+### Additional disposable SQL coverage added
+
+- Simulate an exception inside the order creator and assert the idempotency claim/order insert roll back together.
+- Retry the same key after the failed transaction and assert a new order can be created.
+- Assert effective RPC EXECUTE privileges deny `anon` and `authenticated` while allowing `service_role`.
+- Assert the fixture RPC owner and empty `search_path` configuration.
+
+These are test-code additions; CI has not yet been rerun against this commit. The fixture remains simplified and does not exercise actual MEC stock locks, row-level security, target-project default privileges, or real Supabase API role behavior. Do not infer production readiness from this fixture.
