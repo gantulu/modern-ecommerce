@@ -1,5 +1,12 @@
 # MEC Duitku POP Edge Functions
 
+## Current integration gate
+
+**Checkout integration is not ready for end-to-end validation.** The live schema inspection found that `public.products` does not match the repository's frontend Product contract, while `public.applestore` is a separate 222-row candidate catalog with unverified currency semantics. Do not create a catalog migration, deploy functions, or enable checkout until the authoritative source table, price currency/unit, sale-price rule, sellable stock field, and stable product-ID mapping are verified. See [MEC catalog source audit and migration preflight](./MEC_CATALOG_MIGRATION_PREFLIGHT.md).
+
+The existing checkout branch is a draft implementation only. The presence of MEC tables and prior payment migrations does not by itself verify that the displayed catalog, order pricing, and inventory source are aligned.
+
+
 ## Deployed function endpoints
 
 - Create Invoice: `POST https://oszqantvugvbvydlizix.supabase.co/functions/v1/mec-duitku-create-invoice`
