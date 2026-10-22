@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { SlidingWindowRateLimiter, rateLimitKey } from "./rate_limit.ts";
+import { authorizeOrderStatusRead } from "./authorization.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL");
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -44,29 +45,6 @@ function bearerToken(request: Request): string | null {
   const value = request.headers.get("authorization") ?? "";
   const match = value.match(/^Bearer\s+(.+)$/i);
   return match?.[1]?.trim() || null;
-}
-
-function toHex(bytes: Uint8Array): string {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-async function sha256(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(value),
-  );
-  return toHex(new Uint8Array(digest));
-}
-
-function constantTimeEqual(left: string, right: string): boolean {
-  const a = new TextEncoder().encode(left.toLowerCase());
-  const b = new TextEncoder().encode(right.toLowerCase());
-  if (a.length !== b.length) return false;
-  let difference = 0;
-  for (let index = 0; index < a.length; index++) {
-    difference |= a[index] ^ b[index];
-  }
-  return difference === 0;
 }
 
 Deno.serve(async (request: Request) => {
@@ -144,18 +122,18 @@ Deno.serve(async (request: Request) => {
       return respond({ success: false, error: "PAYMENT_NOT_AVAILABLE" }, 404, origin);
     }
 
-    let authorized = false;
-    if (order.user_id) {
-      if (accessToken) {
-        const { data: authData, error: authError } = await db.auth.getUser(accessToken);
-        authorized = !authError && authData.user?.id === order.user_id;
-      }
-    } else if (guestToken && order.guest_token_hash) {
-      authorized = constantTimeEqual(
-        await sha256(guestToken),
-        String(order.guest_token_hash),
-      );
-    }
+    const authorized = await authorizeOrderStatusRead(
+      {
+        user_id: order.user_id,
+        guest_token_hash: order.guest_token_hash,
+      },
+      accessToken,
+      guestToken || null,
+      async (token) => {
+        const { data: authData, error: authError } = await db.auth.getUser(token);
+        return !authError && authData.user?.id ? authData.user.id : null;
+      },
+    );
 
     // Keep inaccessible and nonexistent orders indistinguishable.
     if (!authorized) {
