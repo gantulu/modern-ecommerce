@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ShoppingCart, ArrowLeft, Package, Check, Truck, Shield } from 'lucide-react';
 import { useCartStore } from '../store/cartStore';
-import { Product } from '../types/supabase';
+import type { Product } from '../types/supabase';
 import ProductGallery from '../components/ProductGallery';
 import { fetchMecProducts } from '../lib/mecCatalog';
 
