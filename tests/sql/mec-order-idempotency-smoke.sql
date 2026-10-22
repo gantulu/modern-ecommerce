@@ -19,7 +19,7 @@ BEGIN
     'Test Customer',
     'test@example.com',
     '5550100',
-    '[{"product_id":"fixture","quantity":1}]'::jsonb,
+    '[{"product_id":"11111111-1111-4111-8111-111111111111","quantity":1}]'::jsonb,
     NULL,
     repeat('b', 64),
     15
@@ -32,7 +32,7 @@ BEGIN
     'Test Customer',
     'test@example.com',
     '5550100',
-    '[{"product_id":"fixture","quantity":1}]'::jsonb,
+    '[{"product_id":"11111111-1111-4111-8111-111111111111","quantity":1}]'::jsonb,
     NULL,
     repeat('b', 64),
     15
@@ -47,6 +47,11 @@ BEGIN
     RAISE EXCEPTION 'expected exactly one order after replay, got %', order_count;
   END IF;
 
+  IF (SELECT stock_quantity FROM public.mec_products WHERE id='11111111-1111-4111-8111-111111111111') <> 99
+     OR (SELECT count(*) FROM public.mec_order_items WHERE order_id=first_id) <> 1 THEN
+    RAISE EXCEPTION 'order creation did not atomically reserve one unit and create one order item';
+  END IF;
+
   BEGIN
     PERFORM * FROM public.mec_create_order_idempotent(
       'test-idempotency-key-0001',
@@ -54,7 +59,7 @@ BEGIN
       'Different Customer',
       'different@example.com',
       '5550101',
-      '[{"product_id":"fixture","quantity":2}]'::jsonb,
+      '[{"product_id":"11111111-1111-4111-8111-111111111111","quantity":2}]'::jsonb,
       NULL,
       repeat('b', 64),
       15
@@ -80,7 +85,7 @@ BEGIN
     PERFORM * FROM public.mec_create_order_idempotent(
       'rollback-retry-key-00001', repeat('9', 64), 'ROLLBACK_TEST',
       'rollback@example.com', '5550199',
-      '[{"product_id":"fixture","quantity":1}]'::jsonb,
+      '[{"product_id":"11111111-1111-4111-8111-111111111111","quantity":1}]'::jsonb,
       NULL, repeat('8', 64), 15
     );
   EXCEPTION WHEN SQLSTATE 'P0001' THEN
@@ -94,16 +99,26 @@ BEGIN
     RAISE EXCEPTION 'failed order call left partial idempotency/order rows';
   END IF;
 
+  IF (SELECT stock_quantity FROM public.mec_products WHERE id='11111111-1111-4111-8111-111111111111') <> 99
+     OR (SELECT count(*) FROM public.mec_order_items) <> 1 THEN
+    RAISE EXCEPTION 'failure after stock decrement left inventory or order-item side effects';
+  END IF;
+
   -- Same key is reusable after rollback, because no claim was committed.
   SELECT order_id INTO retry_id
   FROM public.mec_create_order_idempotent(
     'rollback-retry-key-00001', repeat('9', 64), 'Retry Customer',
     'retry@example.com', '5550198',
-    '[{"product_id":"fixture","quantity":1}]'::jsonb,
+    '[{"product_id":"11111111-1111-4111-8111-111111111111","quantity":1}]'::jsonb,
     NULL, repeat('8', 64), 15
   );
   IF retry_id IS NULL OR (SELECT count(*) FROM public.mec_orders) <> 2 THEN
     RAISE EXCEPTION 'same key could not be retried after transaction rollback';
+  END IF;
+
+  IF (SELECT stock_quantity FROM public.mec_products WHERE id='11111111-1111-4111-8111-111111111111') <> 98
+     OR (SELECT count(*) FROM public.mec_order_items) <> 2 THEN
+    RAISE EXCEPTION 'successful retry did not commit inventory and order-item changes exactly once';
   END IF;
 
   IF has_function_privilege('anon',
