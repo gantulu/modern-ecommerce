@@ -35,7 +35,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes postgresql-client
-      - name: Prepare disposable fixture
+      - name: Bootstrap minimal Supabase Auth fixture
+        run: psql -X -v ON_ERROR_STOP=1 -f tests/sql/mec-order-idempotency-fixture-bootstrap.sql
+      - name: Apply actual MEC schema migration to disposable PostgreSQL
+        run: psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261022180316_create_mec_ecommerce_v1.sql
+      - name: Seed disposable MEC products and rollback trigger
         run: psql -X -v ON_ERROR_STOP=1 -f tests/sql/mec-order-idempotency-fixture.sql
       - name: Apply draft SQL to disposable PostgreSQL
         run: psql -X -v ON_ERROR_STOP=1 -f docs/proposed-migrations/20261023_mec_order_idempotency_rate_limit_DRAFT.sql
