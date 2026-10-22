@@ -1,8 +1,8 @@
 import { ShoppingCart, Heart, Package } from 'lucide-react';
-import { Product } from '../types/supabase';
+import type { Product } from '../types/supabase';
 import { useState, useEffect, memo } from 'react';
 import { useCartStore } from '../store/cartStore';
-import { CartState } from '../types/cart';
+import type { CartState } from '../types/cart';
 
 const formatIDR = (amount: number) => new Intl.NumberFormat('id-ID', {
   style: 'currency',
