@@ -145,5 +145,5 @@ No live SQL, catalog data, secrets, Edge Functions, payment requests, or deploym
 ## Frontend validation CI added — 2026-10-23
 
 - Added a draft-branch GitHub Actions job to run `npm ci --ignore-scripts`, `npm run build` (TypeScript check + Vite production build), and `npm run lint` for the checkout/catalog frontend.
-- The job is running in workflow [39869101344](https://github.com/gantulu/modern-ecommerce/actions/runs/39869101344) at the time of this update. Do not treat frontend build/lint as passed until its final job conclusion is recorded.
-- The existing Deno checks for `mec-create-order` and `mec-duitku-create-invoice` passed in the same workflow. The payment-attempt SQL test workflow is separate.
+- First run [39869101344](https://github.com/gantulu/modern-ecommerce/actions/runs/39869101344) confirmed the production build passes but exposed a pre-existing ESLint 9 incompatibility: the lint script passed removed `--ext` and the config mixed legacy and flat-config syntax. The script and config were corrected on the draft branch; rerun [39869317064](https://github.com/gantulu/modern-ecommerce/actions/runs/39869317064) is in progress, so lint is not yet considered passed.
+- The existing Deno checks for `mec-create-order` and `mec-duitku-create-invoice` passed in the first workflow. `npm ci` also reported 38 dependency vulnerabilities (4 low, 6 moderate, 28 high); no dependency upgrades or `npm audit fix` were run. The payment-attempt SQL test workflow is separate.
