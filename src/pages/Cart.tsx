@@ -5,6 +5,12 @@ import { supabase } from '../lib/supabase';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 
+const formatIDR = (amount: number) => new Intl.NumberFormat('id-ID', {
+  style: 'currency',
+  currency: 'IDR',
+  maximumFractionDigits: 0,
+}).format(amount);
+
 export default function Cart() {
   const cartItems = useCartStore((state) => state.items);
   const removeItem = useCartStore((state) => state.removeItem);
@@ -126,6 +132,7 @@ export default function Cart() {
         throw new Error(paymentResult?.error || 'No valid Duitku payment URL was returned. Reconcile the payment before retrying.');
       }
 
+      sessionStorage.removeItem(orderKeyStorage);
       clearCart();
       window.location.assign(paymentUrl);
     } catch (error) {
@@ -173,7 +180,7 @@ export default function Cart() {
                       {item.name}
                     </h2>
                     <p className="text-gray-600 dark:text-gray-300">
-                      ${item.price.toFixed(2)} <span className="text-xs">(display estimate)</span>
+                      ${formatIDR(item.price)} <span className="text-xs">(display estimate)</span>
                     </p>
                     <div className="flex items-center mt-2">
                       <button
@@ -200,7 +207,7 @@ export default function Cart() {
                 </div>
                 <div className="flex flex-col items-end pl-3">
                   <p className="font-semibold text-gray-900 dark:text-white mb-2">
-                    ${(item.price * item.quantity).toFixed(2)}
+                    {formatIDR(item.price * item.quantity)}
                   </p>
                   <button
                     type="button"
@@ -235,7 +242,7 @@ export default function Cart() {
             <div className="space-y-2 mb-4">
               <div className="flex justify-between text-gray-600 dark:text-gray-300">
                 <span>Subtotal ({itemCount} items)</span>
-                <span>${displayTotal.toFixed(2)}</span>
+                <span>{formatIDR(displayTotal)}</span>
               </div>
               <div className="flex justify-between text-gray-600 dark:text-gray-300">
                 <span>Shipping</span>
@@ -244,7 +251,7 @@ export default function Cart() {
               <div className="border-t border-gray-200 dark:border-gray-700 pt-2 mt-2">
                 <div className="flex justify-between font-semibold text-lg">
                   <span>Estimated total</span>
-                  <span className="text-primary">${displayTotal.toFixed(2)}</span>
+                  <span className="text-primary">{formatIDR(displayTotal)}</span>
                 </div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
                   Final total is calculated from current database prices during checkout and may differ from this estimate.
