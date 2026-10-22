@@ -180,7 +180,7 @@ export default function Cart() {
                       {item.name}
                     </h2>
                     <p className="text-gray-600 dark:text-gray-300">
-                      ${formatIDR(item.price)} <span className="text-xs">(display estimate)</span>
+                      {formatIDR(item.price)} <span className="text-xs">(display estimate)</span>
                     </p>
                     <div className="flex items-center mt-2">
                       <button
