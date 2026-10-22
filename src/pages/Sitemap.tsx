@@ -5,12 +5,9 @@ import {
   User, 
   ShoppingCart, 
   Info, 
-  HelpCircle, 
-  Mail, 
-  FileText, 
-  Truck, 
-  RefreshCw, 
-  Package
+  HelpCircle,
+  FileText,
+  Truck
 } from 'lucide-react';
 
 export default function Sitemap() {
