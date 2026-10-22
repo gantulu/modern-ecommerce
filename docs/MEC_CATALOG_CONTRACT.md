@@ -20,9 +20,9 @@ Define the boundary between the storefront, MEC order creation, and Duitku POP w
 ## Evidence-backed current state
 
 - Frontend Product type in src/types/supabase.ts expects id, name, description, numeric price, image_url, category, stock, and created_at.
-- Storefront query in src/pages/Products.tsx reads public.products and filters/orders by top-level category, price, name, and created_at.
-- Product card in src/components/ProductCard.tsx renders price with a dollar sign, while src/pages/Cart.tsx formats cart estimates as IDR. This is an explicit presentation-contract mismatch.
-- Filter defaults in Products.tsx use a maximum price of 1000, with no verified currency unit.
+- The original storefront query read `public.products`; this feature branch replaces catalog reads in Products, Categories, and Featured Products with a shared MEC-only query over `mec_products`, `mec_categories`, and `mec_product_images`.
+- Product cards and Quick View now format MEC `price_idr` as whole IDR, matching the cart estimate formatter.
+- Product price filters now derive their maximum from active MEC product `price_idr` values and display IDR.
 - Cart checkout sends only product_id and quantity to mec-create-order; the client total is display-only. The Edge Function requires UUID-shaped product IDs and calls mec_create_order_idempotent.
 - MEC order creation reads MEC product data server-side. public.mec_products.id is UUID and its payable price field is price_idr bigint; inventory field is stock_quantity integer. Order items preserve a product-name and unit-price snapshot. These are the intended server-side checkout fields, not a mapping approval for any legacy table.
 - Live public.products has one feed-shaped row with item_group_id, title, currency, inventory_quantity, and nested sizes[].price strings. The sample includes strings such as 12000000.00 IDR, but its product URL is an example.com placeholder and there is no normalized top-level price/frontend id contract.
@@ -56,7 +56,7 @@ The TypeScript UI type can remain a presentation model, but the source query, cu
 - mec_products.category_id references mec_categories.id; source category labels require a deterministic mapping.
 - Order creation accepts product UUIDs and positive integer quantities only. It reads current MEC prices/stock under the existing database transaction/locking rules; it must not trust browser price, total, title, category, or stock.
 - mec_order_items snapshots product name and unit price at order time. Duitku paymentAmount must be derived from the persisted order amount and its item details must reconcile to that same amount.
-- Store source provenance explicitly (for example, source system + source ID) in a reviewed additive schema design if a legacy source is imported. Never cast text source IDs to UUID or regenerate product UUIDs on every import.
+- Keep MEC product UUIDs stable. No legacy source mapping/import is permitted under the locked source boundary.
 - Product price conversion must be deterministic, lossless, positive, and tested. No implicit rounding or unit assumptions.
 - Keep order/payment state transitions and stock reservation on the server/database; the client return URL is not payment confirmation.
 
@@ -71,9 +71,9 @@ The TypeScript UI type can remain a presentation model, but the source query, cu
 7. Image URL provenance and whether remote images can be used directly.
 8. Storefront currency display and price filter ranges.
 
-## Gate before catalog migration
+## Gate before catalog schema changes
 
-Do not draft or apply a catalog migration until the source and price semantics are verified from authoritative source documentation/configuration or explicit owner confirmation. After that gate, update the contract and tests first, then prepare an additive migration/import plan. Keep legacy tables and historical orders untouched.
+The initial catalog population mechanism is controlled manual entry of owner-supplied values directly into `mec_categories`, `mec_products`, and `mec_product_images`. Do not read, join, copy, sync, or import from any non-`mec_` table or external catalog feed. Do not draft/apply schema migrations or create catalog rows as part of this documentation/code change. Promotion schema and storage-bucket provisioning require separate review.
 
 ## Acceptance criteria
 
