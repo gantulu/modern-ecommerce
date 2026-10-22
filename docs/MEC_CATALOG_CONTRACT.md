@@ -40,10 +40,10 @@ The UI may display a normalized product view with:
 | id | Stable MEC product UUID, also used as the cart/order product ID |
 | name | Display title |
 | description | Description; nullable source values must be normalized explicitly |
-| price | Integer whole-IDR amount for display only; source conversion must be verified |
-| image_url | Valid remote URL or an explicitly mapped Storage URL; do not label arbitrary URLs as Storage paths |
-| category | Canonical display category sourced from a documented mapping |
-| stock | Nonnegative sellable quantity derived from the verified inventory source |
+| price | Integer whole-IDR amount mapped directly from `mec_products.price_idr`; display only |
+| image_url | Public URL generated from `mec_product_images.storage_path` in the dedicated `mec-products` bucket, or the local placeholder until the bucket is provisioned |
+| category | `mec_categories.name` joined by `mec_products.category_id` |
+| stock | Nonnegative available-to-sell quantity mapped from `mec_products.stock_quantity` |
 | created_at | MEC/catalog timestamp or a documented source timestamp |
 
 The TypeScript UI type can remain a presentation model, but the source query, currency formatting, filters, product cards, cart, and checkout must all agree on the unit. Do not use the UI price value as payment authority.
@@ -52,24 +52,24 @@ The TypeScript UI type can remain a presentation model, but the source query, cu
 
 - mec_products.id is the stable UUID consumed by the cart and order RPC.
 - mec_products.price_idr is the server-authoritative unit price in whole IDR.
-- mec_products.stock_quantity is the server-authoritative sellable stock quantity only after the source stock semantics are verified.
-- mec_products.category_id references mec_categories.id; source category labels require a deterministic mapping.
+- `mec_products.stock_quantity` is the available-to-sell quantity used by server-side reservation/decrement; values must be owner-verified before activation.
+- `mec_products.category_id` references `mec_categories.id`; the storefront reads the category name from that MEC relationship.
 - Order creation accepts product UUIDs and positive integer quantities only. It reads current MEC prices/stock under the existing database transaction/locking rules; it must not trust browser price, total, title, category, or stock.
 - mec_order_items snapshots product name and unit price at order time. Duitku paymentAmount must be derived from the persisted order amount and its item details must reconcile to that same amount.
 - Keep MEC product UUIDs stable. No legacy source mapping/import is permitted under the locked source boundary.
-- Product price conversion must be deterministic, lossless, positive, and tested. No implicit rounding or unit assumptions.
+- The storefront reads `price_idr` directly; no legacy conversion, promotion fallback, or currency inference is permitted.
 - Keep order/payment state transitions and stock reservation on the server/database; the client return URL is not payment confirmation.
 
 ## Explicitly unresolved — do not implement assumptions
 
-1. Authoritative catalog source: public.products, public.applestore, or another source.
-2. Price currency and unit for every selected source field and variant. The embedded IDR text in one feed-shaped row is evidence about that row only; it does not define the whole source or resolve which table is authoritative.
-3. Price selection: base price versus sale price, and the effective-date / eligibility rules.
-4. Sellable stock: source field and semantics; whether inventory is global stock, feed quantity, or channel-specific quantity.
-5. Variant handling: whether sizes / colors represent distinct purchasable SKUs and how variant identity is passed to the cart/order.
-6. Category mapping and stable source-ID provenance.
-7. Image URL provenance and whether remote images can be used directly.
-8. Storefront currency display and price filter ranges.
+1. The owner-supplied MEC-native catalog values and operator review must be completed before product activation.
+2. Each `price_idr` value must be approved as a whole-IDR price for that MEC product.
+3. Promotions remain unsupported until a separate MEC-only promotion schema and contract is reviewed.
+4. Each `stock_quantity` value must be owner-verified available-to-sell stock.
+5. Each separately purchasable SKU is represented by a separate MEC product row until a variant model is approved.
+6. Category assignment uses only the MEC `category_id` foreign key.
+7. The dedicated `mec-products` Storage bucket must be separately provisioned and verified before MEC image rows are entered.
+8. Storefront, cart, and product detail display whole IDR consistently.
 
 ## Gate before catalog schema changes
 
@@ -77,10 +77,10 @@ The initial catalog population mechanism is controlled manual entry of owner-sup
 
 ## Acceptance criteria
 
-- One named source of truth and documented currency/unit are confirmed.
-- Sale-price and variant-selection rules are explicit.
+- Catalog values are entered directly into MEC by an authorized operator from values supplied specifically for MEC; no non-MEC source is queried or imported.
+- Promotion behavior remains disabled; independently purchasable SKUs are separate MEC product rows until a dedicated variant contract is reviewed.
 - Sellable stock field and reservation behavior are confirmed.
-- Stable source-ID-to-MEC-UUID mapping is deterministic and collision-safe.
+- MEC UUIDs remain stable; no legacy source-ID mapping/import exists.
 - Storefront, cart, and server use the same product UUID and a consistent currency presentation contract.
 - Server totals and Duitku item details reconcile exactly in whole IDR.
 - Remote image handling and category mapping are documented.
@@ -93,4 +93,4 @@ A follow-up read-only search found catalog display configuration in [gantulu/okt
 
 The one live public.products sample includes a 128GB sale effective interval of 2026-04-01 through 2026-04-10, which has expired as of 2026-10-23. Do not use that sample's sale price as current checkout price without a verified effective-date policy.
 
-The contract remains blocked pending confirmation of the MEC-native catalog population method, price/unit semantics, promotion eligibility/date handling, and authoritative sellable stock. No catalog migration or non-MEC import is authorized.
+The MEC-only frontend contract and controlled manual-entry procedure are documented. Catalog activation still depends on owner-supplied product values and verification of price, stock, and images. No catalog migration or non-MEC import is authorized.
