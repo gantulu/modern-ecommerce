@@ -4,6 +4,10 @@ import { Product, Category } from '../types/supabase';
 const MEC_PRODUCT_IMAGE_BUCKET = 'mec-products';
 const PRODUCT_PLACEHOLDER = '/product-placeholder.svg';
 
+export function getMecProductImageUrl(storagePath: string): string {
+  return supabase.storage.from(MEC_PRODUCT_IMAGE_BUCKET).getPublicUrl(storagePath).data.publicUrl;
+}
+
 type MecProductRow = {
   id: string;
   category_id: string | null;
@@ -37,7 +41,7 @@ export async function fetchMecProducts(): Promise<{ products: Product[]; error: 
     const primaryImage = [...(row.mec_product_images ?? [])]
       .sort((a, b) => a.display_order - b.display_order)[0];
     const imageUrl = primaryImage
-      ? supabase.storage.from(MEC_PRODUCT_IMAGE_BUCKET).getPublicUrl(primaryImage.storage_path).data.publicUrl
+      ? getMecProductImageUrl(primaryImage.storage_path)
       : PRODUCT_PLACEHOLDER;
 
     return {
