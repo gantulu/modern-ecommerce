@@ -27,10 +27,10 @@ export default function Cart() {
   );
 
   useEffect(() => {
-    if (!customerName.trim() && profile?.full_name) setCustomerName(profile.full_name);
-    if (!customerPhone.trim() && profile?.phone) setCustomerPhone(profile.phone);
-    if (!customerEmail.trim() && user?.email) setCustomerEmail(user.email);
-  }, [profile?.full_name, profile?.phone, user?.email, customerName, customerEmail, customerPhone]);
+    if (profile?.full_name) setCustomerName((current) => current.trim() ? current : profile.full_name ?? '');
+    if (profile?.phone) setCustomerPhone((current) => current.trim() ? current : profile.phone ?? '');
+    if (user?.email) setCustomerEmail((current) => current.trim() ? current : user.email ?? '');
+  }, [profile?.full_name, profile?.phone, user?.email]);
 
   const handleQuantityChange = (productId: string, newQuantity: number) => {
     if (newQuantity <= 0) {
