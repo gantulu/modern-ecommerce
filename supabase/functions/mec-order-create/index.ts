@@ -44,7 +44,7 @@ function normalizeItems(input: unknown): { product_id: string; quantity: number 
     if (!item || typeof item !== "object" || Array.isArray(item)) return null;
     const productId = (item as Record<string, unknown>).product_id;
     const quantity = (item as Record<string, unknown>).quantity;
-    if (typeof productId !== "string" ||
+    if (typeof productId !== "string" || typeof quantity !== "number" ||
         !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(productId) ||
         !Number.isSafeInteger(quantity) || Number(quantity) < 1 || Number(quantity) > 100) return null;
     const id = productId.toLowerCase();
