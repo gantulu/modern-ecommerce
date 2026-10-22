@@ -98,3 +98,36 @@ These are draft-only code changes. They do not prove function ownership/grants a
 - Assert the fixture RPC owner and empty `search_path` configuration.
 
 **CI rerun passed**: [SQL contract + concurrency run 39867476942](https://github.com/gantulu/modern-ecommerce/actions/runs/39867476942) and [Deno type-check run 39867476958](https://github.com/gantulu/modern-ecommerce/actions/runs/39867476958). The fixture remains simplified and does not exercise actual MEC stock locks, row-level security, target-project default privileges, or real Supabase API role behavior. Do not infer production readiness from this fixture.
+
+## Final contract audit — 2026-10-23
+
+### Findings and changes
+
+- **Canonical RPC contract confirmed:** `mec_create_order_idempotent(text,text,text,text,text,jsonb,uuid,text,integer)` remains the single proposed order-idempotency contract. PR #5's authenticated checkout sends the same nine named arguments and computes SHA-256 over normalized customer data, authenticated-user scope, and sorted/merged product UUID + quantity pairs. The live database still has no idempotency table/RPC; this contract is not live.
+- **Atomicity boundary confirmed at code level:** the idempotency claim, call to `mec_private.create_order`, and assignment of `order_id` occur inside one PostgreSQL function transaction. A thrown exception rolls back the key claim together with order and inventory changes performed by the called routine. The fixture explicitly tests claim/order rollback and same-key retry, but does not yet model the real MEC inventory tables.
+- **Least-privilege hardening applied to this draft branch:** removed direct `service_role` CRUD grants on `mec_order_idempotency` and `mec_private.rate_limit_buckets`. The intended boundary is `service_role` EXECUTE on the three `SECURITY DEFINER` RPCs; backing tables should not also be directly exposed to the service client. Added fixture assertions for the RPC grants and absence of direct backing-table grants.
+- **Fixed search path:** all three proposed `SECURITY DEFINER` RPCs set an empty `search_path`; referenced functions and tables in their bodies are schema-qualified. The target owner/effective privileges cannot be proven until the proposed SQL is applied to an approved disposable Supabase-like target.
+- **Concurrency evidence:** existing disposable tests cover same-key replay, same-key/different-hash rejection, two concurrent same-key calls resolving to one order, rollback/retry, RPC grants, and 40 concurrent rate-limit calls. They do not prove same-key/different-hash concurrency races against real MEC inventory locks, nor do they verify a production Supabase role setup.
+- **Known contract limitation:** idempotency key is globally unique, while the request hash includes identity scope. Reuse by a different identity is rejected as a payload conflict and does not return the other identity's order, but a key collision can cause a denial/conflict. This is safe against cross-identity replay but should remain an explicit client contract: generate high-entropy keys and never share them across checkout identities.
+- **Target schema compatibility:** read-only target inspection confirms `mec_private.create_order(text,text,text,jsonb,uuid,text,integer)` exists and locks product rows in deterministic UUID order, validates active status and stock, derives price from `mec_products.price_idr`, creates order/items, and decrements stock within the same transaction. Target has no proposed idempotency RPC/table. All seven inspected MEC tables were empty at audit time.
+
+### Step 1 decision
+
+**Contract shape accepted for continued draft development; production approval withheld.** The table grants were tightened and corresponding fixture assertions added. Remaining blockers: run CI on the latest commits; expand the fixture to model inventory/order-item rollback and competing checkout payloads; verify actual ownership/default privileges and RPC execution in an approved Supabase-like environment; and do not apply to the live project without separate authorization.
+
+## Step 2 — checkout and inventory transaction audit (started automatically)
+
+### Verified transaction properties
+
+- The live `mec_private.create_order` routine obtains `FOR UPDATE` locks on distinct product rows in deterministic product-ID order before checking stock and pricing.
+- It validates that every requested product exists, is active, and has enough stock; calculates subtotal from database-owned `mec_products.price_idr`; inserts the order; decrements stock; and inserts order-item snapshots in the same database transaction.
+- The PR #4 idempotency wrapper calls that routine and writes the idempotency-to-order link in the same surrounding transaction. A failure at any point should roll back all these database changes.
+
+### Step 2 gaps still blocking approval
+
+- Disposable PR #4 fixture does not reproduce the real MEC product/order-item schema, row locks, inventory decrement, or stock restoration/rollback; its rollback proof is only an injected failure before fixture order insertion.
+- Need deterministic tests for two different idempotency keys competing for the final stock unit, overlapping multi-product carts (deadlock resistance), and a failure after stock decrement/order-item insertion proving all effects roll back.
+- Need verify inventory release/restock is idempotent and cannot restore stock twice; verify payment-success callback racing reservation expiry/release remains an explicit reconciliation anomaly rather than silently restoring or consuming stock twice.
+- The target catalog is empty, so live checkout behavior cannot be functionally exercised with current data. No live writes or payment attempts are authorized.
+
+Next branch-only work is to extend disposable transaction tests and document their scope. Step 3 (payment state/reconciliation) remains dependent on these transaction results and the missing status/inquiry contract.
