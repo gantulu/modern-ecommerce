@@ -83,6 +83,43 @@ stock_after="$(psql -X -qAt -v ON_ERROR_STOP=1 -c "SELECT stock_quantity FROM pu
 test "$((orders_after - orders_before))" = "1"
 test "$stock_after" = "0"
 
+# Opposite item ordering under overlapping transactions must not deadlock.
+# create_order locks all distinct product rows in sorted UUID order.
+multi_orders_before="$(psql -X -qAt -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM public.mec_orders;")"
+stock_a_before="$(psql -X -qAt -v ON_ERROR_STOP=1 -c "SELECT stock_quantity FROM public.mec_products WHERE id='11111111-1111-4111-8111-111111111111';")"
+stock_b_before="$(psql -X -qAt -v ON_ERROR_STOP=1 -c "SELECT stock_quantity FROM public.mec_products WHERE id='33333333-3333-4333-8333-333333333333';")"
+multi_cart() {
+  local key="$1"
+  local customer="$2"
+  local hash="$3"
+  local items="$4"
+  psql -X -qAt -v ON_ERROR_STOP=1 -c "
+    SELECT order_id
+    FROM public.mec_create_order_idempotent(
+      '$key', '$hash', '$customer', 'multi-cart@example.com', '5550104',
+      '$items'::jsonb, NULL, repeat('c', 64), 15
+    );" >"$tmp/$key.out" 2>"$tmp/$key.err"
+}
+set +e
+multi_cart "multi-cart-opposite-order-0001" "MULTI_CART_A" "$(printf 'c%.0s' {1..64})" '[{"product_id":"11111111-1111-4111-8111-111111111111","quantity":1},{"product_id":"33333333-3333-4333-8333-333333333333","quantity":1}]' &
+multi1=$!
+multi_cart "multi-cart-opposite-order-0002" "MULTI_CART_B" "$(printf 'd%.0s' {1..64})" '[{"product_id":"33333333-3333-4333-8333-333333333333","quantity":1},{"product_id":"11111111-1111-4111-8111-111111111111","quantity":1}]' &
+multi2=$!
+wait "$multi1"; multi_status1=$?
+wait "$multi2"; multi_status2=$?
+set -e
+if [[ "$multi_status1" -ne 0 || "$multi_status2" -ne 0 ]]; then
+  echo "ERROR: overlapping multi-product orders failed; expected deterministic lock ordering" >&2
+  cat "$tmp/multi-cart-opposite-order-0001.err" "$tmp/multi-cart-opposite-order-0002.err" >&2
+  exit 1
+fi
+multi_orders_after="$(psql -X -qAt -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM public.mec_orders;")"
+stock_a_after="$(psql -X -qAt -v ON_ERROR_STOP=1 -c "SELECT stock_quantity FROM public.mec_products WHERE id='11111111-1111-4111-8111-111111111111';")"
+stock_b_after="$(psql -X -qAt -v ON_ERROR_STOP=1 -c "SELECT stock_quantity FROM public.mec_products WHERE id='33333333-3333-4333-8333-333333333333';")"
+test "$((multi_orders_after - multi_orders_before))" = "2"
+test "$((stock_a_before - stock_a_after))" = "2"
+test "$((stock_b_before - stock_b_after))" = "2"
+
 
 # Forty concurrent requests against a fresh bucket with a limit of twenty:
 # exactly twenty must be admitted.
@@ -100,4 +137,5 @@ test "$allowed" = "20"
 
 echo "PASS: concurrent same-key order calls returned one order."
 echo "PASS: different-key checkout race reserved the final stock unit exactly once."
+echo "PASS: overlapping multi-product orders with opposite item orderings both committed without deadlock."
 echo "PASS: shared limiter admitted exactly 20 of 40 concurrent requests."
