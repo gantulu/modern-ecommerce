@@ -97,4 +97,4 @@ These are draft-only code changes. They do not prove function ownership/grants a
 - Assert effective RPC EXECUTE privileges deny `anon` and `authenticated` while allowing `service_role`.
 - Assert the fixture RPC owner and empty `search_path` configuration.
 
-These are test-code additions; CI has not yet been rerun against this commit. The fixture remains simplified and does not exercise actual MEC stock locks, row-level security, target-project default privileges, or real Supabase API role behavior. Do not infer production readiness from this fixture.
+**CI rerun passed**: [SQL contract + concurrency run 39867476942](https://github.com/gantulu/modern-ecommerce/actions/runs/39867476942) and [Deno type-check run 39867476958](https://github.com/gantulu/modern-ecommerce/actions/runs/39867476958). The fixture remains simplified and does not exercise actual MEC stock locks, row-level security, target-project default privileges, or real Supabase API role behavior. Do not infer production readiness from this fixture.
