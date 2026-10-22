@@ -1,117 +1,72 @@
-# Legacy catalog → MEC catalog preflight
+# MEC catalog source audit and migration preflight
 
-Status: **audit only; do not apply a catalog migration until these checks pass against the correct Supabase project**.
+Status: **BLOCKED — source catalog and currency unit are not yet verified. No catalog migration has been created or applied.**
 
-## Mapping contract
+## Repository contract
 
-- Legacy source: `public.products`, `public.categories`, and optional `public.product_images`.
-- MEC destination: `public.mec_products`, `public.mec_categories`, and `public.mec_product_images`.
-- Currency decision: legacy `products.price` is treated as **IDR**. MEC stores whole rupiah as `bigint price_idr`.
-- Preserve `products.id` as `mec_products.id`. The frontend cart sends legacy product IDs; preserving IDs avoids a lookup/translation race between cart and checkout.
-- Preserve category IDs where possible. Resolve products with null `category_id` using the legacy `products.category` label.
-- Do not copy `orders` or `order_items` into MEC order tables. They represent historical checkout data and must not be converted into new payable orders.
-- Do not reinterpret `image_url` as a Storage path. Product imagery remains served by the existing catalog until an explicit image mapping is defined.
-- No live schema or row values have been read by this audit. The connected Supabase project visible to the tools is named `No signal` and has not been assumed to be the database for this repository.
+The current frontend contract in `src/types/supabase.ts` expects products with:
+- `id` (string identifier),
+- `name`,
+- `description`,
+- `price` (number),
+- `image_url`,
+- `category`,
+- `stock`,
+- optional `category_id`.
 
-## Read-only SQL preflight
+`src/pages/Products.tsx` queries `public.products` and filters/searches using `category`, `price`, and `name`. The checkout cart passes each product's `id` to the MEC order Edge Function, whose database contract expects UUID product IDs in `public.mec_products`.
 
-Run these queries only against the Supabase project that is confirmed to back `gantulu/modern-ecommerce`.
+## Read-only database observations
 
-### 1. Data quality and IDR integer compatibility
+The connected Supabase project inspected during this audit is:
+- Project name: `No signal`
+- Project ref: `oszqantvugvbvydlizix`
+- Region: `ap-northeast-1`
+- Status: `ACTIVE_HEALTHY`
 
-```sql
-SELECT
-  count(*) AS product_count,
-  count(*) FILTER (WHERE price IS NULL) AS null_price_count,
-  count(*) FILTER (WHERE price <= 0) AS nonpositive_price_count,
-  count(*) FILTER (WHERE price <> trunc(price)) AS fractional_idr_price_count,
-  count(*) FILTER (WHERE stock IS NULL OR stock < 0) AS invalid_stock_count,
-  count(*) FILTER (WHERE length(btrim(name)) = 0) AS empty_name_count
-FROM public.products;
-```
+The repository's existing MEC migration history and the Edge Function URLs in `docs/MEC_DUITKU_EDGE_FUNCTIONS.md` reference this same project ref. However, the product data itself does **not** match the repository's current frontend contract, so the correct commercial source catalog is still unconfirmed.
 
-Payment amounts are integer IDR and must be positive. If `fractional_idr_price_count` is nonzero, **stop**: do not round silently. Review the affected records and correct the source data or approve a documented conversion rule first.
+Observed tables and counts:
+- `public.products`: 1 row. Its actual columns include `item_group_id`, `title`, `currency`, and `inventory_quantity`; it does not expose the `id`, `name`, `price`, `category`, `stock` contract currently used by the frontend.
+- `public.applestore`: 222 rows, with text `id`, `title`, integer `price` and `sale_price`, text `category`, `availability`, and `quantity_to_sell_on_facebook`.
+- `public.mec_products`: 0 rows; primary key `id` is UUID and `price_idr` is bigint.
+- `public.mec_categories`: 0 rows; primary key `id` is UUID.
 
-```sql
-SELECT id, name, price, stock, category, category_id
-FROM public.products
-WHERE price IS NULL OR price <= 0 OR price <> trunc(price)
-   OR stock IS NULL OR stock < 0
-   OR length(btrim(name)) = 0
-ORDER BY name, id;
-```
+The `applestore` table has 222 distinct IDs, no blank titles, no null/nonpositive base prices, no nonpositive non-null sale prices, and no null/negative `quantity_to_sell_on_facebook` values. Category counts are iPhone 144, iPad 36, and iWatch 42.
 
-### 2. Verify category references and labels
+These checks establish basic data quality only. They do **not** establish that `applestore` is the intended source for this generic e-commerce repository, that `price` or `sale_price` is denominated in IDR, or that `quantity_to_sell_on_facebook` is the stock field used for checkout. Values must not be converted or charged as IDR based on magnitude or column name alone.
 
-```sql
-SELECT p.id, p.name, p.category, p.category_id,
-       c.name AS referenced_category_name
-FROM public.products p
-LEFT JOIN public.categories c ON c.id = p.category_id
-WHERE p.category_id IS NOT NULL AND c.id IS NULL
-ORDER BY p.name, p.id;
-```
+## Mapping contract — provisional, not approved
 
-```sql
-SELECT lower(btrim(category)) AS normalized_product_category,
-       count(*) AS products_using_category
-FROM public.products
-GROUP BY lower(btrim(category))
-ORDER BY normalized_product_category;
-```
+Do not assume the earlier mapping from `public.products.id` to `mec_products.id`: the live `public.products` table does not have an `id` column, and the actual row uses a different schema.
 
-Compare these labels with `public.categories.name`. Differences in spelling/case should be reviewed before mapping; do not silently merge distinct categories.
+Do not map `public.applestore.id` directly to `mec_products.id`: it is text while the MEC key is UUID. If this catalog is confirmed as authoritative, define a deterministic, collision-safe mapping strategy and ensure the cart and order RPC use the same product identity. Do not silently generate fresh UUIDs on every run.
 
-### 3. Detect existing MEC ID collisions
+Do not map `sale_price` to checkout price or use `quantity_to_sell_on_facebook` as stock until the owner confirms those semantics. Do not infer currency from the numeric values. The previous choice to treat `public.products.price` as IDR is inapplicable to the observed schema because that column does not exist on the live table.
 
-```sql
-SELECT p.id, p.name AS legacy_name, m.name AS mec_name,
-       p.price AS legacy_price_idr, m.price_idr AS mec_price_idr,
-       p.stock AS legacy_stock, m.stock_quantity AS mec_stock
-FROM public.products p
-JOIN public.mec_products m ON m.id = p.id
-WHERE p.name IS DISTINCT FROM m.name
-   OR p.price IS DISTINCT FROM m.price_idr::numeric
-   OR p.stock IS DISTINCT FROM m.stock_quantity
-ORDER BY p.id;
-```
+Do not copy historical legacy orders/order items into MEC payable orders. Do not convert remote image URLs into Storage paths without a separately reviewed image mapping.
 
-```sql
-SELECT c.id, c.name AS legacy_name, m.name AS mec_name
-FROM public.categories c
-JOIN public.mec_categories m ON m.id = c.id
-WHERE c.name IS DISTINCT FROM m.name
-ORDER BY c.id;
-```
+## Required source and currency verification
 
-Any returned collision must be resolved before upsert. A matching ID is not sufficient if the stored product/category values differ.
+Before drafting the catalog migration, establish all of the following from authoritative project configuration, product source documentation, or explicit owner confirmation:
 
-### 4. Row counts and orphan image references
-
-```sql
-SELECT 'products' AS source, count(*) AS rows FROM public.products
-UNION ALL
-SELECT 'categories', count(*) FROM public.categories
-UNION ALL
-SELECT 'product_images', count(*) FROM public.product_images;
-```
-
-```sql
-SELECT pi.id, pi.product_id, pi.image_url
-FROM public.product_images pi
-LEFT JOIN public.products p ON p.id = pi.product_id
-WHERE p.id IS NULL;
-```
+1. Which table is the source of truth for the products shown by `src/pages/Products.tsx`: the existing `public.products` feed, `public.applestore`, or a different catalog/database?
+2. What currency and unit are used by the selected source's base and sale prices (for example, whole IDR, major-unit currency, or minor units)? Use source documentation or known authoritative product records; numeric magnitude is not evidence.
+3. Which price is charged: base price or sale price, and under what conditions?
+4. Which source field is the authoritative sellable stock quantity?
+5. How should category labels map to MEC categories, and should original source IDs be preserved in an explicit source-ID mapping column/table?
+6. How should remote image URLs be represented without pretending they are Supabase Storage paths?
 
 ## Migration acceptance criteria
 
-- The database/project identity is confirmed; schema inspection is read-only.
-- All legacy prices are positive whole IDR amounts, or a separate approved conversion rule exists.
-- All stock values are non-negative.
-- Every category reference resolves and the category-label mapping is documented.
-- Existing MEC IDs have no conflicting data, or conflicts have a reviewed resolution.
-- The migration preserves legacy product UUIDs and does not modify legacy tables, legacy triggers, historical orders, or existing payment records.
-- Post-migration row counts and sampled ID/name/price/stock/category mappings match the preflight report.
-- The checkout Edge Function and frontend build/tests pass before deployment.
+- Source catalog and currency/price semantics are confirmed.
+- Frontend product query, Product type, cart IDs, and server-side order creation all share one consistent product identity and schema contract.
+- Prices convert to positive whole IDR amounts without implicit rounding; any conversion is explicitly documented and tested.
+- Stock source and reservation semantics are verified.
+- Category mapping and source-ID mapping are deterministic and collision-safe.
+- Existing MEC IDs and slugs have no conflicting records, or a reviewed resolution exists.
+- Migration is additive and guarded; it does not modify legacy source tables, historical orders, or existing payment records.
+- Read-only preflight and post-migration count/sample checks are documented.
+- Build, lint, SQL validation, concurrency tests, and sandbox end-to-end tests pass before deployment.
 
-Until the checks above have been executed against the confirmed project, catalog migration is **blocked**. This is a guard against charging a price or reserving stock from a different catalog than the one shown to the customer.
+Until these criteria pass, catalog migration and production checkout activation remain blocked. All database inspection for this report was read-only.
