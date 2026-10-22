@@ -167,7 +167,7 @@ BEGIN
     END,
     request_count = CASE
       WHEN mec_private.rate_limit_buckets.window_started_at
-           + make_interval(secs => p_window_seconds) <= v_now
+           + make_interval(secs => p_window_seconds) <= clock_timestamp()
       THEN 1
       ELSE least(mec_private.rate_limit_buckets.request_count + 1, p_max_requests + 1)
     END,
