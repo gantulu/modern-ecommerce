@@ -67,10 +67,10 @@ Deno.serve(async (req) => {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(productId)) {
       return respond({ error: "Invalid product identifier in cart" }, 400);
     }
-    if (!Number.isSafeInteger(quantity) || Number(quantity) < 1 || Number(quantity) > 1000) {
+    if (typeof quantity !== "number" || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 1000) {
       return respond({ error: "Each item quantity must be an integer between 1 and 1000" }, 400);
     }
-    items.push({ product_id: productId, quantity: Number(quantity) });
+    items.push({ product_id: productId, quantity });
   }
 
   const { data, error } = await db.rpc("mec_create_order_idempotent", {
@@ -83,7 +83,6 @@ Deno.serve(async (req) => {
   });
 
   if (error) {
-    const message = error.message ?? "";
     if (error.code === "23514" || error.code === "22023") {
       return respond({ error: "Cart validation failed: a product may be inactive or stock may be insufficient" }, 409);
     }
