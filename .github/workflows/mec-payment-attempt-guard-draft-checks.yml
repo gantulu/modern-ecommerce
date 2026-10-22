@@ -1,0 +1,41 @@
+name: MEC payment attempt guard draft checks
+
+on:
+  pull_request:
+    paths:
+      - "docs/proposed-migrations/20261023_mec_payment_attempt_guard_DRAFT.sql"
+      - "tests/sql/mec-payment-attempt-guard.sql"
+      - ".github/workflows/mec-payment-attempt-guard-draft-checks.yml"
+  push:
+    branches:
+      - "feat/mec-checkout-duitku-pop"
+
+jobs:
+  postgres-payment-attempt-guard:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: mec_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mec_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: mec_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run disposable partial-unique-index contract test
+        run: psql -v ON_ERROR_STOP=1 -f tests/sql/mec-payment-attempt-guard.sql
+      - name: Test concurrent inserts with different idempotency keys
+        run: bash tests/sql/mec-payment-attempt-concurrency.sh

@@ -17,8 +17,8 @@ interface AuthState {
   setUser: (user: User | null) => void;
   setProfile: (profile: UserProfile | null) => void;
   checkUser: () => Promise<void>;
-  signIn: (email: string, password: string) => Promise<{ error: any | null }>;
-  signUp: (email: string, password: string, username: string) => Promise<{ error: any | null, data: any | null }>;
+  signIn: (email: string, password: string) => Promise<{ error: { message: string } | null }>;
+  signUp: (email: string, password: string, username: string) => Promise<{ error: { message: string } | null; data: unknown | null }>;
   signOut: () => Promise<void>;
   fetchUserProfile: (userId: string) => Promise<void>;
 }
@@ -116,7 +116,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return { error };
     } catch (error) {
       console.error('Sign in error:', error);
-      return { error };
+      return { error: { message: error instanceof Error ? error.message : 'Sign in failed' } };
     }
   },
   signUp: async (email, password, username) => {
@@ -177,7 +177,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return { error, data };
     } catch (error) {
       console.error('Sign up error:', error);
-      return { error, data: null };
+      return {
+        error: { message: error instanceof Error ? error.message : 'Sign up failed' },
+        data: null,
+      };
     }
   },
   signOut: async () => {
