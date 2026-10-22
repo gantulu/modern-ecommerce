@@ -34,6 +34,9 @@ RETURNS TABLE(
 LANGUAGE plpgsql
 AS $$
 BEGIN
+  IF p_customer_name = 'ROLLBACK_TEST' THEN
+    RAISE EXCEPTION 'fixture order failure for rollback test' USING ERRCODE = 'P0001';
+  END IF;
   RETURN QUERY
   INSERT INTO public.mec_orders AS o (
     id, order_number, subtotal_amount, inventory_reserved_until
