@@ -17,8 +17,8 @@ interface AuthState {
   setUser: (user: User | null) => void;
   setProfile: (profile: UserProfile | null) => void;
   checkUser: () => Promise<void>;
-  signIn: (email: string, password: string) => Promise<{ error: any | null }>;
-  signUp: (email: string, password: string, username: string) => Promise<{ error: any | null, data: any | null }>;
+  signIn: (email: string, password: string) => Promise<{ error: { message: string } | null }>;
+  signUp: (email: string, password: string, username: string) => Promise<{ error: { message: string } | null; data: unknown | null }>;
   signOut: () => Promise<void>;
   fetchUserProfile: (userId: string) => Promise<void>;
 }
