@@ -1,0 +1,25 @@
+name: MEC order creation draft checks
+
+on:
+  push:
+    branches: [feat/mec-order-idempotency-draft]
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/functions/mec-order-create/**'
+      - 'docs/proposed-migrations/**'
+      - '.github/workflows/mec-order-create-draft-checks.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  deno-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check draft Edge Function
+        run: deno check supabase/functions/mec-order-create/index.ts
