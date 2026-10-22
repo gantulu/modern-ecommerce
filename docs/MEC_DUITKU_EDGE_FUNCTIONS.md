@@ -140,3 +140,10 @@ No live SQL, catalog data, secrets, Edge Functions, payment requests, or deploym
 - PR #5's payment-attempt partial unique index remains draft-only. Its previous disposable CI passed the partial-index semantics and two concurrent different-key inserts; the new PR #4 order/inventory tests do not install the payment index in the live database or prove payment provider behavior.
 - Step 2 outcome: order creation and inventory decrement are atomic in the actual MEC routine and are now covered by schema-based disposable tests. Step 3 remains blocked on a verified payment status/inquiry contract and reconciliation path for `unknown`; no replacement attempt should be created automatically.
 - No live migration, deployment, secret change, payment submission, or merge was performed. PR #5 remains draft.
+
+
+## Frontend validation CI added — 2026-10-23
+
+- Added a draft-branch GitHub Actions job to run `npm ci --ignore-scripts`, `npm run build` (TypeScript check + Vite production build), and `npm run lint` for the checkout/catalog frontend.
+- The job is running in workflow [39869101344](https://github.com/gantulu/modern-ecommerce/actions/runs/39869101344) at the time of this update. Do not treat frontend build/lint as passed until its final job conclusion is recorded.
+- The existing Deno checks for `mec-create-order` and `mec-duitku-create-invoice` passed in the same workflow. The payment-attempt SQL test workflow is separate.
