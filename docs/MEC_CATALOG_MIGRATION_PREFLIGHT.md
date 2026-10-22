@@ -78,7 +78,7 @@ Before drafting a catalog migration, establish from authoritative project config
 - Read-only preflight and post-import count/sample checks are documented.
 - Build, lint, SQL validation, concurrency tests, and sandbox end-to-end tests pass before deployment.
 
-Until these criteria pass, catalog migration and production checkout activation remain blocked. Database inspection for this report was read-only. No catalog migration was drafted or applied.
+Until these criteria pass, catalog rows must remain inactive until reviewed, and catalog schema changes/storage provisioning remain separate operations. Database inspection for this report was read-only. No catalog migration was drafted or applied.
 
 
 ## Additional cross-repository evidence found during follow-up audit
