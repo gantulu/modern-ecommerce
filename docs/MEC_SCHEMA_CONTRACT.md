@@ -8,7 +8,7 @@
 - Guest and authenticated checkout are supported.
 - Inventory is reserved atomically at order creation by decrementing available `mec_products.stock_quantity`. A release restores quantities once only.
 - Every Duitku payment attempt is a separate `mec_payments` row. A timeout must become `unknown`; do not automatically create a replacement attempt until reconciliation.
-- This migration file is not applied to any database by committing it to GitHub.
+- The schema migration has been applied to the configured Supabase project and verified for table/function existence, RLS enablement, and RPC execution privileges. End-to-end checkout/payment behavior is not yet verified.
 
 ## Tables
 | Table | Purpose | Important constraints |
@@ -44,8 +44,8 @@
 - Payment: `created`, `requesting`, `pending`, `paid`, `failed`, `expired`, `cancelled`, `unknown`.
 - A verified paid state must not be downgraded by a later failure callback.
 
-## Required verification before production
-- Apply only to a disposable/local development database first.
+## Remaining verification before production traffic
+- The schema is present in the configured Supabase project; do not reapply this migration manually. Test the RPCs in a controlled test dataset before enabling checkout traffic.
 - Test concurrent checkout for the same last item, duplicate items in one request, insufficient stock rollback, and repeated reservation release.
 - Test guest token entropy/hash comparison, RLS/grants, callback signature and amount/order matching, duplicate callback handling, and paid-state monotonicity.
 - Confirm the Duitku inquiry/status endpoint applies to the exact POP merchant/product configuration before using it for reconciliation.
