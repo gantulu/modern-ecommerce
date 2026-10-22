@@ -20,6 +20,7 @@ import Contact from './pages/Contact';
 import Sitemap from './pages/Sitemap';
 import Categories from './pages/Categories';
 import Profile from './pages/Profile';
+import PaymentReturn from './pages/PaymentReturn';
 import { supabase } from './lib/supabase';
 import './styles/animations.css';
 
@@ -67,6 +68,7 @@ function App() {
           <Route path="/shipping" element={<ShippingPolicy />} />
           <Route path="/returns" element={<Returns />} />
           <Route path="/orders" element={<OrderTracking />} />
+          <Route path="/payment/return" element={<PaymentReturn />} />
           <Route path="/about" element={<About />} />
           <Route path="/faq" element={<FAQ />} />
           <Route path="/contact" element={<Contact />} />
