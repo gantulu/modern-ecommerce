@@ -116,7 +116,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return { error };
     } catch (error) {
       console.error('Sign in error:', error);
-      return { error };
+      return { error: { message: error instanceof Error ? error.message : 'Sign in failed' } };
     }
   },
   signUp: async (email, password, username) => {
