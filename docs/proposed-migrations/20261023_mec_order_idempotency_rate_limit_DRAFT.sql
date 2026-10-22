@@ -19,7 +19,7 @@ CREATE TABLE public.mec_order_idempotency (
 
 ALTER TABLE public.mec_order_idempotency ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.mec_order_idempotency FROM PUBLIC, anon, authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.mec_order_idempotency TO service_role;
+-- The SECURITY DEFINER RPC owner performs table access; callers need RPC EXECUTE only.
 
 -- This function wraps the existing transactional order creator. The request_hash
 -- must be computed server-side from canonicalized inputs, identity scope, and
@@ -132,7 +132,7 @@ CREATE TABLE mec_private.rate_limit_buckets (
 );
 
 REVOKE ALL ON mec_private.rate_limit_buckets FROM PUBLIC, anon, authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON mec_private.rate_limit_buckets TO service_role;
+-- The SECURITY DEFINER limiter RPC owner performs table access; callers need RPC EXECUTE only.
 
 CREATE OR REPLACE FUNCTION public.mec_consume_rate_limit(
   p_bucket_hash text,
