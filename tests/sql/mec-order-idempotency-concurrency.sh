@@ -42,6 +42,44 @@ orders_for_key="$(psql -X -qAt -v ON_ERROR_STOP=1 -c \
   "SELECT count(*) FROM public.mec_order_idempotency WHERE idempotency_key='concurrent-idempotency-key-0001' AND order_id IS NOT NULL;")"
 test "$orders_for_key" = "1"
 
+# Same key + different request hashes racing must create exactly one order;
+# the loser must receive a contract conflict, not a second order.
+conflict_orders_before="$(psql -X -qAt -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM public.mec_orders;")"
+conflict_stock_before="$(psql -X -qAt -v ON_ERROR_STOP=1 -c "SELECT stock_quantity FROM public.mec_products WHERE id='11111111-1111-4111-8111-111111111111';")"
+conflicting_call() {
+  local hash="$1"
+  local customer="$2"
+  psql -X -qAt -v ON_ERROR_STOP=1 -c "
+    SELECT order_id
+    FROM public.mec_create_order_idempotent(
+      'concurrent-conflicting-key-0001', '$hash', '$customer',
+      'conflict@example.com', '5550105',
+      jsonb_build_array(jsonb_build_object('product_id', '11111111-1111-4111-8111-111111111111', 'quantity', 1)),
+      NULL, repeat('d', 64), 15
+    );" >"$tmp/$customer.out" 2>"$tmp/$customer.err"
+}
+set +e
+conflicting_call "$(printf 'e%.0s' {1..64})" "CONFLICTING_CUSTOMER_A" &
+conflict1=$!
+conflicting_call "$(printf 'f%.0s' {1..64})" "CONFLICTING_CUSTOMER_B" &
+conflict2=$!
+wait "$conflict1"; conflict_status1=$?
+wait "$conflict2"; conflict_status2=$?
+set -e
+if [[ "$conflict_status1" -eq 0 && "$conflict_status2" -eq 0 ]]; then
+  echo "ERROR: concurrent same-key/different-hash requests both succeeded" >&2
+  exit 1
+fi
+if [[ "$conflict_status1" -ne 0 && "$conflict_status2" -ne 0 ]]; then
+  echo "ERROR: both conflicting same-key requests failed" >&2
+  cat "$tmp/CONFLICTING_CUSTOMER_A.err" "$tmp/CONFLICTING_CUSTOMER_B.err" >&2
+  exit 1
+fi
+conflict_orders_after="$(psql -X -qAt -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM public.mec_orders;")"
+conflict_stock_after="$(psql -X -qAt -v ON_ERROR_STOP=1 -c "SELECT stock_quantity FROM public.mec_products WHERE id='11111111-1111-4111-8111-111111111111';")"
+test "$((conflict_orders_after - conflict_orders_before))" = "1"
+test "$((conflict_stock_before - conflict_stock_after))" = "1"
+
 # Two different idempotency keys compete for the only remaining unit.
 # Product row locking + stock revalidation must admit one order, not oversell.
 orders_before="$(psql -X -qAt -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM public.mec_orders;")"
@@ -136,6 +174,7 @@ allowed="$(for f in "$tmp"/limit-*; do cat "$f"; done | grep -c '^t$' || true)"
 test "$allowed" = "20"
 
 echo "PASS: concurrent same-key order calls returned one order."
+echo "PASS: concurrent same-key/different-hash calls produced one order and one conflict."
 echo "PASS: different-key checkout race reserved the final stock unit exactly once."
 echo "PASS: overlapping multi-product orders with opposite item orderings both committed without deadlock."
 echo "PASS: shared limiter admitted exactly 20 of 40 concurrent requests."
