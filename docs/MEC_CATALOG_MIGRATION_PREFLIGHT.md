@@ -68,3 +68,19 @@ Before drafting a catalog migration, establish from authoritative project config
 - Build, lint, SQL validation, concurrency tests, and sandbox end-to-end tests pass before deployment.
 
 Until these criteria pass, catalog migration and production checkout activation remain blocked. Database inspection for this report was read-only. No catalog migration was drafted or applied.
+
+
+## Additional cross-repository evidence found during follow-up audit
+
+A read-only search across the owner's accessible GitHub repositories found related catalog-display configuration in [gantulu/oktavia/app/all.json](https://github.com/gantulu/oktavia/blob/2a3162afc5dd8e148a96b9a5f7bcfbc6ae3cc04f/app/all.json) and [app/home/flashSale.json](https://github.com/gantulu/oktavia/blob/2a3162afc5dd8e148a96b9a5f7bcfbc6ae3cc04f/app/home/flashSale.json). This is a useful lead, **not proof that this is the source that populates modern-ecommerce's live tables**.
+
+The related UI config reads catalog data through OpenSheet from a Google Sheet (ID: 1x2Rtyeyq3WR6yFybA8stGP0mdI2dlKvBz6fhx7FIjhQ, tab Sheet1) and maps:
+- price as the crossed-out price when a sale price is present.
+- sale_price as the primary display price when present, otherwise price.
+- quantity_to_sell_on_facebook through a minMax(1, 99) transform for the product card.
+
+This reveals a **display selection rule** in that separate UI: show sale_price when populated, otherwise price. It does not establish the authoritative checkout price, currency/unit, promotion eligibility/effective dates, or whether this sheet feeds either live MEC legacy table. The quantity transform also means that field must not be assumed to be raw sellable inventory for checkout.
+
+The single public.products sample has a sale_price_effective_date of 2026-04-01T00:00:00/2026-04-10T23:59:59 for its 128GB variant. That interval has elapsed as of this audit date (2026-10-23); it is only one feed-shaped sample and does not establish the production promotion policy. The source contract must define whether effective dates are enforced and what happens when a sale price is blank, expired, or malformed.
+
+Still unresolved: confirm whether the oktavia Google Sheet is the actual commercial source for this MEC storefront, confirm the currency/unit used in that sheet, and confirm whether the display rule is also the checkout charging rule. No schema or data changes were made.
