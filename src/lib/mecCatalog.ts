@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { Product, Category } from '../types/supabase';
+import type { Product, Category } from '../types/supabase';
 
 const MEC_PRODUCT_IMAGE_BUCKET = 'mec-products';
 const PRODUCT_PLACEHOLDER = '/product-placeholder.svg';
