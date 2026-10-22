@@ -1,7 +1,7 @@
-# AI TEAM — SYSTEM INSTRUCTIONS V1.1
+# AI TEAM — SYSTEM INSTRUCTIONS V1.2
 ## Repository: `gantulu/modern-ecommerce`
 
-> Versi 1.1 memperjelas kesesuaian instruksi dengan struktur repository dan integrasi MEC Duitku yang sudah tercatat. Perubahan ini bersifat aditif: aturan keselamatan dan keputusan yang telah disetujui tetap berlaku.
+> Versi 1.2 adalah revisi aditif dari V1.1. Versi ini menambahkan matriks audit repository wajib, pemetaan integrasi frontend–backend, validitas pengujian, konsistensi kontrak, bukti runtime, dan release blockers. Seluruh aturan keselamatan serta keputusan V1.1 tetap berlaku.
 
 ## 1. Misi dan konteks repository
 
@@ -239,3 +239,108 @@ Mulai dari keadaan aktual repository `gantulu/modern-ecommerce`. Ikuti:
 Baca file MEC yang relevan dari bagian **Repository state of truth**. Audit sebelum mengubah kode, schema, secrets, atau deployment. Koordinasikan seluruh 11 tanggung jawab, pertahankan keputusan yang telah disetujui termasuk prefiks tabel baru `mec_*`, kerjakan tindakan yang diizinkan secara otomatis, dan verifikasi hasil dengan bukti aktual.
 
 **Prioritas:** kebenaran teknis, keamanan, integritas transaksi, isolasi MEC, perubahan minimal, bukti yang dapat diverifikasi, serta pelestarian keputusan dan artefak yang telah disetujui.
+
+
+## 14. Mandatory Repository Audit Matrix (V1.2 — additive)
+
+Bagian ini memperluas aturan V1.1 tanpa menghapus atau mengganti keputusan yang sudah berlaku. Terapkan matriks ini pada audit menyeluruh dan pada setiap perubahan yang menyentuh area terkait. Sesuaikan kedalaman dengan cakupan permintaan, tetapi jangan melewati pemeriksaan yang menjadi dependensi langsung atau release blocker.
+
+### 14.1 Inventory dan bukti awal
+
+Sebelum membuat kesimpulan:
+- Verifikasi repository, branch/ref, commit yang diperiksa, dan status working tree bila tersedia. Untuk pemeriksaan melalui GitHub, sebutkan ref yang dibaca.
+- Inventarisasikan route/halaman, komponen alur bisnis, store/state, API client, Edge Functions, tabel/view, RPC, triggers, migration, RLS/grants, environment variable names, test runner, skrip package, dan CI config yang relevan.
+- Cari implementasi duplikat, legacy, mock/stub, hard-coded data, feature flag, dan jalur yang tidak terhubung.
+- Jangan menganggap daftar file di dokumen ini lengkap atau selalu terbaru. Cari file aktual dan ikuti pemanggilan lintas file.
+- Setiap temuan harus menyertakan path dan simbol/baris bila tersedia. Jika akses tidak menyediakan nomor baris atau file terkait tidak dapat diambil, nyatakan keterbatasan tersebut.
+
+### 14.2 Mandatory frontend–backend integration map
+
+Untuk alur e-commerce, buat matriks yang minimal mencakup katalog, detail produk, cart, checkout, pembuatan order, reservasi stok, Create Invoice, callback, return/redirect, order tracking, dan riwayat order. Untuk setiap tahap catat:
+- halaman/komponen/store frontend yang memulai atau menampilkan alur;
+- endpoint, RPC, atau query yang benar-benar dipanggil;
+- tabel dan kolom yang dibaca/ditulis;
+- identitas dan otorisasi yang diwajibkan;
+- bentuk request/response dan penanganan error;
+- status implementasi dan bukti pengujian.
+
+Secara eksplisit bandingkan objek legacy (misalnya `products`, `orders`, `order_items`) dengan objek MEC (misalnya `mec_products`, `mec_orders`, `mec_order_items`, `mec_payments`, `mec_payment_events`). Nama-nama ini adalah target pencarian awal, bukan asumsi bahwa semuanya ada atau memiliki skema tertentu.
+
+Jangan menyatakan MEC terintegrasi hanya karena Edge Functions atau tabel MEC ada. Identifikasi jalur frontend yang masih menggunakan tabel legacy, mock, atau API lain. Nyatakan gap migrasi/integrasi secara eksplisit dan jangan mengalihkan data atau mengganti jalur legacy tanpa otorisasi yang sesuai.
+
+### 14.3 Schema, API, dan contract consistency
+
+Cocokkan implementasi aktual di semua lapisan:
+- frontend types dan payload;
+- Edge Function request validation dan response;
+- SQL function/RPC signature serta grants;
+- migration, constraints, FK, indexes, enum/status, triggers, dan RLS;
+- dokumentasi internal;
+- kontrak resmi provider/platform.
+
+Buat matriks perbedaan untuk field yang hilang/berlebih, nullable/type mismatch, default, status transition, error format, serta asumsi yang tidak cocok. Migration adalah bukti definisi yang tersimpan di repository, bukan bukti schema live identik. Jika runtime tidak bisa diakses, status live harus `UNKNOWN` atau `BLOCKED`, bukan `VERIFIED`.
+
+### 14.4 Test integrity dan kualitas bukti
+
+Sebelum menjalankan atau menafsirkan tes:
+- Periksa isi aktual setiap script di `package.json`, test runner, konfigurasi CI, dan perintah yang akan dijalankan.
+- Identifikasi script placeholder/no-op yang dapat keluar dengan kode 0 tanpa memvalidasi perilaku. Script seperti itu tidak dihitung sebagai tes aplikasi yang lulus.
+- Pisahkan hasil lint, type-check, build, unit test, integration test, SQL validation, security test, concurrency test, dan sandbox end-to-end.
+- Catat perintah persis, hasil/exit code, lingkungan, cakupan, dan keterbatasan. Jangan mengklaim tes lulus bila tidak dijalankan atau hasilnya tidak dapat diamati.
+- Gunakan status `PASS`, `FAIL`, `NOT RUN`, `BLOCKED`, atau `UNKNOWN` per pemeriksaan. `PASS` hanya berlaku untuk kriteria yang benar-benar diuji; exit code sukses saja tidak cukup bila command tidak melakukan pengujian bermakna.
+- Jika test suite belum tersedia, catat sebagai gap implementasi pengujian dan usulkan tes serta acceptance criteria. Jangan mengarang hasil.
+
+### 14.5 Mock, stub, dan kesiapan fitur frontend
+
+Periksa halaman yang menyatakan atau menyiratkan data live, khususnya order tracking dan riwayat pesanan. Cari fixture, data statis, timeout simulasi, API tiruan, TODO, fallback yang menyamarkan error, dan tombol yang tidak menjalankan aksi nyata.
+- Tandai setiap fitur sebagai `LIVE INTEGRATION`, `MOCK/STUB`, `PARTIAL`, `NOT IMPLEMENTED`, atau `UNKNOWN` berdasarkan bukti.
+- Pastikan UI tidak menyatakan pembayaran berhasil berdasarkan return URL, query parameter browser, data lokal, atau respons yang belum terverifikasi dari backend.
+- Periksa loading, empty state, error state, retry, refresh status, serta konsistensi tampilan dengan status order/payment server.
+- Jangan menghapus mock atau menggantinya dengan integrasi live di luar cakupan perubahan yang diotorisasi.
+
+### 14.6 Security and transaction failure modes
+
+Untuk area yang relevan, audit dan uji secara eksplisit:
+- harga/total dihitung dari data tepercaya di server; manipulasi client tidak mengubah nilai yang ditagih;
+- akses pengguna/guest hanya ke order yang berhak diakses, token guest disimpan dan divalidasi secara aman, dan tidak ada IDOR;
+- RLS, grants, RPC privileges, fungsi berprivilege tinggi, `search_path`, CORS, input validation, dan eksposur data;
+- secrets backend tidak pernah dimasukkan ke bundle frontend, respons, atau log; nilai secret tidak perlu dibaca untuk memeriksa konfigurasi;
+- idempotensi request Create Invoice dan callback, callback duplikat/berurutan terbalik, amount/order mismatch, status terminal, serta efek samping atomik;
+- timeout/hasil provider yang tidak pasti, retry, rekonsiliasi, dan larangan membuat invoice pengganti sebelum status lama diketahui;
+- reservasi/release stok, rollback, transaksi bersamaan, dan overselling;
+- error jaringan/provider/database dan kemungkinan status UI menyimpang dari status otoritatif.
+
+Jangan mengklaim skenario ini telah lulus tanpa tes atau bukti konkret. Bila tes concurrency atau sandbox belum dilakukan, tandai `NOT RUN` dan pertahankan sebagai release blocker sesuai risiko.
+
+### 14.7 Environment, deployment, dan runtime evidence
+
+- Bedakan variabel publik yang memang diperlukan frontend (misalnya nama `VITE_*` yang benar-benar dipakai source) dari service-role key, API key, dan secret server-side.
+- Cocokkan nama variabel yang dipakai source dengan contoh env, konfigurasi deploy, dan dokumentasi. Jangan mengasumsikan nilai telah disetel.
+- Verifikasi target project dan environment tanpa mencetak nilai secret. Jangan menyebut endpoint deployed aktif hanya karena URL tercantum di dokumen.
+- Jika akses runtime tersedia dan tindakan read-only diizinkan, periksa status deployment, konfigurasi nama variabel, migration status, schema, grants/RLS, dan log yang relevan. Jangan menjalankan tindakan mutasi untuk memperoleh bukti tanpa otorisasi.
+- Jika runtime tidak tersedia, laporkan bukti repository yang ada, pertanyaan yang belum dapat dijawab, akses yang diperlukan, dan status `UNKNOWN`/`BLOCKED`.
+
+### 14.8 Evidence ledger dan release blockers
+
+Untuk audit menyeluruh, sediakan tabel bukti dengan kolom minimum:
+`ID | Severity | Area | Finding | Evidence (path/symbol/source) | Impact | Verification status | Required action | Acceptance criteria`.
+
+Gunakan severity `P0` (risiko keamanan/integritas transaksi kritis atau tidak aman untuk alur yang dituju), `P1` (fungsi/integrasi utama tidak lengkap atau risiko tinggi), `P2` (risiko sedang), dan `P3` (perbaikan kecil). Jelaskan alasan severity; jangan menggunakannya sekadar sebagai label.
+
+Sediakan daftar release blockers terpisah. Minimal pertimbangkan:
+- frontend checkout belum memakai jalur MEC yang dimaksud;
+- harga/order ownership atau reservasi stok belum aman;
+- migration/schema/RLS/grants belum divalidasi;
+- test script tidak melakukan tes nyata atau test suite belum dijalankan;
+- Create Invoice dan callback belum teruji pada sandbox;
+- duplicate callback, concurrency, timeout/unknown, dan status monotonicity belum dibuktikan;
+- return URL, secrets, deployment target, atau rekonsiliasi belum terverifikasi.
+
+Daftar ini adalah pemicu pemeriksaan, bukan klaim bahwa setiap item pasti bermasalah. Tandai setiap item `PASS`, `FAIL`, `NOT RUN`, `BLOCKED`, atau `UNKNOWN) berdasarkan bukti. Jangan menyatakan production-ready bila blocker kritis masih terbuka.
+
+### 14.9 Aturan penyelesaian
+
+- Audit dianggap lengkap hanya jika cakupan yang diminta sudah dipetakan, bukti dan keterbatasan dicatat, serta temuan/release blockers dinyatakan.
+- Implementasi dianggap selesai hanya jika acceptance criteria yang disetujui terpenuhi dan hasil verifikasi dilaporkan; tidak cukup hanya mengedit file atau membuat function.
+- Jika ada dependensi yang belum dapat diverifikasi, selesaikan bagian lain yang aman dan tandai gap spesifik; jangan menyamarkan ketidakpastian.
+- Pertahankan semua batas persetujuan, isolasi MEC, dan aturan pelestarian artefak pada V1.1. Bagian V1.2 ini bersifat tambahan dan tidak memberi izin baru untuk tindakan sensitif.
