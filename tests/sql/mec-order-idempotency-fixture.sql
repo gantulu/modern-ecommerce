@@ -1,52 +1,27 @@
--- Disposable PostgreSQL fixture only. Never run against a live project.
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon NOLOGIN; END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN CREATE ROLE service_role NOLOGIN; END IF;
-END
-$$;
+-- Seed/trigger fixture after applying the repository's real MEC schema migration.
+-- Disposable PostgreSQL only. Never run against a live project.
+INSERT INTO public.mec_products(id, name, slug, price_idr, stock_quantity, is_active)
+VALUES
+  ('11111111-1111-4111-8111-111111111111', 'Fixture Standard Product', 'fixture-standard-product', 100, 100, true),
+  ('22222222-2222-4222-8222-222222222222', 'Fixture Last-Unit Product', 'fixture-last-unit-product', 100, 1, true);
 
-CREATE SCHEMA mec_private;
-
-CREATE TABLE public.mec_orders (
-  id uuid PRIMARY KEY,
-  order_number text NOT NULL UNIQUE,
-  subtotal_amount bigint NOT NULL,
-  inventory_reserved_until timestamptz NOT NULL
-);
-
-CREATE OR REPLACE FUNCTION mec_private.create_order(
-  p_customer_name text,
-  p_customer_email text,
-  p_customer_phone text,
-  p_items jsonb,
-  p_user_id uuid DEFAULT NULL,
-  p_guest_token_hash text DEFAULT NULL,
-  p_reservation_minutes integer DEFAULT 15
-)
-RETURNS TABLE(
-  order_id uuid,
-  order_number text,
-  subtotal_amount bigint,
-  inventory_reserved_until timestamptz
-)
+-- Inject failure after create_order has decremented stock and inserted the order,
+-- when its next order-item insert runs. PostgreSQL must roll back all effects.
+CREATE OR REPLACE FUNCTION public.mec_test_fail_order_item_after_stock_update()
+RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  IF p_customer_name = 'ROLLBACK_TEST' THEN
-    RAISE EXCEPTION 'fixture order failure for rollback test' USING ERRCODE = 'P0001';
+  IF EXISTS (
+    SELECT 1 FROM public.mec_orders o
+    WHERE o.id = NEW.order_id AND o.customer_name = 'ROLLBACK_TEST'
+  ) THEN
+    RAISE EXCEPTION 'fixture failure after stock decrement' USING ERRCODE = 'P0001';
   END IF;
-  RETURN QUERY
-  INSERT INTO public.mec_orders AS o (
-    id, order_number, subtotal_amount, inventory_reserved_until
-  )
-  VALUES (
-    gen_random_uuid(),
-    'MEC-' || substr(gen_random_uuid()::text, 1, 8),
-    100,
-    clock_timestamp() + make_interval(mins => p_reservation_minutes)
-  )
-  RETURNING o.id, o.order_number, o.subtotal_amount, o.inventory_reserved_until;
+  RETURN NEW;
 END
 $$;
+
+CREATE TRIGGER mec_test_fail_order_item_after_stock_update
+BEFORE INSERT ON public.mec_order_items
+FOR EACH ROW EXECUTE FUNCTION public.mec_test_fail_order_item_after_stock_update();
