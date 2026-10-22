@@ -21,7 +21,7 @@ call_order() {
       'Concurrent Customer',
       'concurrent@example.com',
       '5550102',
-      '[{"product_id":"fixture","quantity":1}]'::jsonb,
+      jsonb_build_array(jsonb_build_object('product_id', 'fixture', 'quantity', 1)),
       NULL,
       repeat('f', 64),
       15
