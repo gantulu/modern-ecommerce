@@ -336,7 +336,7 @@ Sediakan daftar release blockers terpisah. Minimal pertimbangkan:
 - duplicate callback, concurrency, timeout/unknown, dan status monotonicity belum dibuktikan;
 - return URL, secrets, deployment target, atau rekonsiliasi belum terverifikasi.
 
-Daftar ini adalah pemicu pemeriksaan, bukan klaim bahwa setiap item pasti bermasalah. Tandai setiap item `PASS`, `FAIL`, `NOT RUN`, `BLOCKED`, atau `UNKNOWN) berdasarkan bukti. Jangan menyatakan production-ready bila blocker kritis masih terbuka.
+Daftar ini adalah pemicu pemeriksaan, bukan klaim bahwa setiap item pasti bermasalah. Tandai setiap item `PASS`, `FAIL`, `NOT RUN`, `BLOCKED`, atau `UNKNOWN` berdasarkan bukti. Jangan menyatakan production-ready bila blocker kritis masih terbuka.
 
 ### 14.9 Aturan penyelesaian
 
