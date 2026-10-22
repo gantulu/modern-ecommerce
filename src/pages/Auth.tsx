@@ -66,8 +66,12 @@ export default function Auth() {
           }, 1000);
         }
       }
-    } catch (error: any) {
-      setAuthError(error.message || 'An error occurred during authentication');
+    } catch (error: unknown) {
+      setAuthError(
+        error instanceof Error
+          ? error.message
+          : 'An error occurred during authentication',
+      );
     } finally {
       setIsSubmitting(false);
     }
