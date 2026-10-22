@@ -342,12 +342,12 @@ RETURNS TABLE(order_id uuid, order_number text, subtotal_amount bigint, inventor
 LANGUAGE sql
 SECURITY INVOKER
 SET search_path = pg_catalog, public, mec_private
-AS $
+AS $mec$
   SELECT * FROM mec_private.create_order(
     p_customer_name, p_customer_email, p_customer_phone, p_items,
     p_user_id, p_guest_token_hash, p_reservation_minutes
   );
-$;
+$mec$;
 REVOKE ALL ON FUNCTION public.mec_create_order(text, text, text, jsonb, uuid, text, integer) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.mec_create_order(text, text, text, jsonb, uuid, text, integer) TO service_role;
 
@@ -356,9 +356,9 @@ RETURNS boolean
 LANGUAGE sql
 SECURITY INVOKER
 SET search_path = pg_catalog, public, mec_private
-AS $
+AS $mec$
   SELECT mec_private.release_order_inventory(p_order_id, p_new_status);
-$;
+$mec$;
 REVOKE ALL ON FUNCTION public.mec_release_order_inventory(uuid, text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.mec_release_order_inventory(uuid, text) TO service_role;
 
