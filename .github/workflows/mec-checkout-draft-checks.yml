@@ -1,0 +1,27 @@
+name: MEC checkout draft checks
+
+on:
+  push:
+    branches: [feat/mec-checkout-duitku-pop]
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/functions/mec-create-order/**'
+      - 'supabase/functions/mec-duitku-create-invoice/**'
+      - '.github/workflows/mec-checkout-draft-checks.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  deno-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check MEC order creation
+        run: deno check supabase/functions/mec-create-order/index.ts
+      - name: Type-check MEC Duitku Create Invoice
+        run: deno check supabase/functions/mec-duitku-create-invoice/index.ts
