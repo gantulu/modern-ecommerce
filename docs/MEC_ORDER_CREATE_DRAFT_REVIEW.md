@@ -34,7 +34,7 @@ This avoids requiring the server to store or reissue plaintext guest tokens. Bro
 
 ## Blocking review gates
 
-1. **No SQL execution:** validate syntax, object ownership, grants, constraints, and concurrent transaction semantics in a disposable test project first.
+1. **Disposable CI validation passed; target-project validation remains blocking:** the latest GitHub Actions run applied this draft SQL to a disposable PostgreSQL 16 service and passed the SQL contract smoke tests plus concurrent idempotency/rate-limit tests. This does not validate the real Supabase schema, object owners, default privileges, service-role grants, or production-like load.
 2. **RPC privileges:** confirm `SECURITY DEFINER` owner, fixed `search_path`, and service-role-only execution under actual Supabase role behavior.
 3. **Limiter semantics:** test threshold, concurrent calls, retry-after accuracy, retention, table growth, and fail-closed behavior.
 4. **Request canonicalization:** add automated tests for stable hashes, duplicate item IDs, invalid UUIDs, invalid quantities, idempotency conflicts, authenticated/guest identity scoping, and guest token entropy.
@@ -52,10 +52,20 @@ This avoids requiring the server to store or reissue plaintext guest tokens. Bro
 
 These are draft-only code changes. They do not prove function ownership/grants are safe in the target database, nor do they establish SQL correctness or concurrency behavior.
 
-## Verification status
+## Verification status — latest CI evidence
 
-- Deno type-check passed in GitHub Actions run [39844566944](https://github.com/gantulu/modern-ecommerce/actions/runs/39844566944) for the latest Edge Function changes at that run's commit.
-- SQL syntax/runtime validation and concurrent transaction tests: not run.
+- SQL workflow [39860380323](https://github.com/gantulu/modern-ecommerce/actions/runs/39860380323): **passed** on a disposable PostgreSQL 16 service. It created a simplified fixture, applied the draft SQL, passed smoke tests for same-key replay, one-order persistence, same-key/different-request rejection, and NULL limiter-window rejection, then passed concurrency checks for two simultaneous same-key calls and 40 concurrent limiter calls with exactly 20 admitted.
+- Deno workflow [39860380403](https://github.com/gantulu/modern-ecommerce/actions/runs/39860380403): **passed** for the draft Edge Function type-check.
+- Test scope limitation: the PostgreSQL fixture is deliberately simplified and is not the live MEC schema. These runs do not prove actual Supabase object ownership/default privileges, target-project RPC access controls, real order/stock semantics, production load behavior, or end-to-end integration.
 - Live Edge Function test: not run.
 - Checkout or guest-token end-to-end: not implemented/verified.
-- Frontend production origin remains unverified; no deployment authorized.
+- Duitku Sandbox payment, callback, status, and reconciliation E2E: not run.
+- Frontend production origin remains unverified; no migration, deployment, or merge is authorized.
+
+## Additional security and test findings
+
+- **RPC ownership/grants:** explicit REVOKE/GRANT statements exist in the draft, but CI does not assert effective privileges for `anon`, `authenticated`, and `service_role`, nor does it verify the actual function owner. Add role-level assertions against a Supabase-like fixture and verify ownership/default privileges in the target project before promotion.
+- **Order idempotency:** current CI proves the happy-path concurrent same-key replay and a conflicting request hash. It does not cover concurrent same-key/different-hash races, rollback/retry after an injected failure, guest-vs-user identity scoping, canonical hash stability, duplicate item IDs, malformed UUIDs/quantities, or order/stock rollback atomicity.
+- **Rate limiter:** current CI proves the exact admission count for one fresh bucket under 40 concurrent calls. It does not cover window rollover, retry-after near the boundary, NULL/invalid max and retention parameters, bucket cleanup, row-growth behavior, or load/fail-closed behavior through the Edge Function. The cleanup DELETE is unbounded; production retention needs a bounded/batched strategy and a monitored schedule.
+- **Shared limiter side effect:** the Edge Function consumes the IP bucket before the identity bucket. Requests denied by the second bucket still consume the first bucket; verify that this is the intended policy and test denial behavior.
+- **Release remains blocked:** do not promote the SQL into supabase/migrations/, deploy the function, connect frontend checkout, run payment tests, or merge until these gates and the separate checkout/Duitku E2E gates are complete.
