@@ -37,6 +37,40 @@ async function sha256(value: string) {
 function validText(v: unknown, max: number) {
   return typeof v === "string" && v.trim().length > 0 && v.trim().length <= max;
 }
+
+const MAX_BODY_BYTES = 32 * 1024;
+async function readJsonLimited(req: Request): Promise<unknown> {
+  const declaredLength = req.headers.get("content-length");
+  if (declaredLength !== null && /^\d+$/.test(declaredLength) &&
+      Number(declaredLength) > MAX_BODY_BYTES) {
+    throw new RangeError("body_too_large");
+  }
+  if (!req.body) throw new Error("body_missing");
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_BODY_BYTES) {
+        await reader.cancel();
+        throw new RangeError("body_too_large");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
 function normalizeItems(input: unknown): { product_id: string; quantity: number }[] | null {
   if (!Array.isArray(input) || input.length === 0 || input.length > 100) return null;
   const merged = new Map<string, number>();
@@ -73,10 +107,13 @@ Deno.serve(async (req) => {
   }
   let input: Record<string, unknown>;
   try {
-    const parsed = await req.json();
+    const parsed = await readJsonLimited(req);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
     input = parsed as Record<string, unknown>;
-  } catch {
+  } catch (error) {
+    if (error instanceof RangeError && error.message === "body_too_large") {
+      return json({ error: "Request body too large" }, 413, origin);
+    }
     return json({ error: "Valid JSON object required" }, 400, origin);
   }
   if (!validText(input.customer_name, 150) ||
