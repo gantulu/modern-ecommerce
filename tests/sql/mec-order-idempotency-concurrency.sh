@@ -21,7 +21,7 @@ call_order() {
       'Concurrent Customer',
       'concurrent@example.com',
       '5550102',
-      jsonb_build_array(jsonb_build_object('product_id', 'fixture', 'quantity', 1)),
+      jsonb_build_array(jsonb_build_object('product_id', '11111111-1111-4111-8111-111111111111', 'quantity', 1)),
       NULL,
       repeat('f', 64),
       15
@@ -42,6 +42,48 @@ orders_for_key="$(psql -X -qAt -v ON_ERROR_STOP=1 -c \
   "SELECT count(*) FROM public.mec_order_idempotency WHERE idempotency_key='concurrent-idempotency-key-0001' AND order_id IS NOT NULL;")"
 test "$orders_for_key" = "1"
 
+# Two different idempotency keys compete for the only remaining unit.
+# Product row locking + stock revalidation must admit one order, not oversell.
+orders_before="$(psql -X -qAt -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM public.mec_orders;")"
+compete_order() {
+  local key="$1"
+  psql -X -qAt -v ON_ERROR_STOP=1 -c "
+    SELECT order_id
+    FROM public.mec_create_order_idempotent(
+      '$key',
+      repeat('a', 64),
+      'Last Unit Customer',
+      'last-unit@example.com',
+      '5550103',
+      jsonb_build_array(jsonb_build_object('product_id', '22222222-2222-4222-8222-222222222222', 'quantity', 1)),
+      NULL,
+      repeat('b', 64),
+      15
+    );" >"$tmp/$key.out" 2>"$tmp/$key.err"
+}
+set +e
+compete_order "different-key-stock-race-0001" &
+race1=$!
+compete_order "different-key-stock-race-0002" &
+race2=$!
+wait "$race1"; race_status1=$?
+wait "$race2"; race_status2=$?
+set -e
+if [[ "$race_status1" -eq 0 && "$race_status2" -eq 0 ]]; then
+  echo "ERROR: both competing orders consumed the final stock unit" >&2
+  exit 1
+fi
+if [[ "$race_status1" -ne 0 && "$race_status2" -ne 0 ]]; then
+  echo "ERROR: both competing orders failed; expected one stock reservation winner" >&2
+  cat "$tmp/different-key-stock-race-0001.err" "$tmp/different-key-stock-race-0002.err" >&2
+  exit 1
+fi
+orders_after="$(psql -X -qAt -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM public.mec_orders;")"
+stock_after="$(psql -X -qAt -v ON_ERROR_STOP=1 -c "SELECT stock_quantity FROM public.mec_products WHERE id='22222222-2222-4222-8222-222222222222';")"
+test "$((orders_after - orders_before))" = "1"
+test "$stock_after" = "0"
+
+
 # Forty concurrent requests against a fresh bucket with a limit of twenty:
 # exactly twenty must be admitted.
 bucket="$(printf 'rate-limit-concurrency-test' | sha256sum | cut -d' ' -f1)"
@@ -57,4 +99,5 @@ allowed="$(for f in "$tmp"/limit-*; do cat "$f"; done | grep -c '^t$' || true)"
 test "$allowed" = "20"
 
 echo "PASS: concurrent same-key order calls returned one order."
+echo "PASS: different-key checkout race reserved the final stock unit exactly once."
 echo "PASS: shared limiter admitted exactly 20 of 40 concurrent requests."
