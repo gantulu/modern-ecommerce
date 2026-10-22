@@ -54,7 +54,7 @@ These are draft-only code changes. They do not prove function ownership/grants a
 
 ## Verification status
 
-- Deno type-check/format checks for the latest commit: pending CI result.
+- Deno type-check passed in GitHub Actions run [39844566944](https://github.com/gantulu/modern-ecommerce/actions/runs/39844566944) for the latest Edge Function changes at that run's commit.
 - SQL syntax/runtime validation and concurrent transaction tests: not run.
 - Live Edge Function test: not run.
 - Checkout or guest-token end-to-end: not implemented/verified.
