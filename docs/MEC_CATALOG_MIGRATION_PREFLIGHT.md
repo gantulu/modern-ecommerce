@@ -7,7 +7,7 @@
 - Allowed operational table family: `mec_*` only.
 - `public.products`, `public.applestore`, Google Sheets, and other non-`mec_` sources are out of scope for MEC. They must not be joined, queried for live MEC behavior, or imported/copied into MEC.
 - The live MEC product and category tables are empty. No fallback to a non-MEC table is permitted; the MEC-native catalog population method requires a separate explicit decision.
-- `src/pages/Products.tsx` currently queries `public.products`, which conflicts with this locked contract and is a frontend implementation gap. Correcting it requires a reviewed code change; this document update does not change application code.
+- This branch now reads the storefront catalog through `src/lib/mecCatalog.ts`, using `mec_products`, `mec_categories`, and `mec_product_images`; the public storefront remains read-only.
 - Legacy table observations below are retained only as read-only audit evidence of the existing mismatch, not as source recommendations or import candidates.
 
 
@@ -18,7 +18,7 @@ Status: **MEC-only frontend query implemented in this branch; catalog population
 The frontend Product type in `src/types/supabase.ts` expects:
 - `id` (string identifier), `name`, `description`, numeric `price`, `image_url`, `category`, `stock`, `created_at`, and optional `category_id`.
 
-`src/pages/Products.tsx` queries `public.products` and filters/searches/sorts using top-level `category`, `price`, `name`, and `created_at`. The checkout cart passes product IDs to the MEC order Edge Function, whose input validation requires UUID product IDs matching `public.mec_products.id`.
+`src/lib/mecCatalog.ts` reads active MEC products and their category/image relations. Products, Categories, and Featured Products use this helper; prices are mapped from `price_idr`, stock from `stock_quantity`, and category names from `mec_categories`. The checkout cart passes MEC product UUIDs and quantities to server-side order creation; browser prices remain display-only.
 
 There is a presentation mismatch: `src/components/ProductCard.tsx` formats prices with a dollar sign, while `src/pages/Cart.tsx` formats them as IDR. The product filter also starts with a maximum price of 1000, with no verified currency unit. Align display, filters, and cart only after source price/unit is verified; do not treat UI prices as payment authority.
 
@@ -44,35 +44,35 @@ The `applestore` table has 222 distinct IDs, no blank titles, no null/nonpositiv
 
 ## MEC-native contract — no legacy mapping or import
 
-- Do not select either legacy table as authoritative based only on its name or schema. `public.products` has the only observed explicit `currency = IDR`, but only one feed-shaped row and example.com placeholder links; treat it as test/sample-like evidence, not proof of the full commercial catalog. `public.applestore` has 222 richer variants and storefront links but no currency field, and its feed-specific stock quantity conflicts with 12 `out of stock` availability values.
-- Do not map `public.products.id` to `mec_products.id`: the live source table has no `id` column.
-- Do not map `public.applestore.id` directly to `mec_products.id`: source IDs are text while MEC product IDs are UUIDs. If this source is confirmed, define a deterministic, collision-safe source-ID mapping and make the storefront/cart/order RPC use the same MEC UUID. Never generate a new random UUID on every import.
-- MEC's current server-side contract uses `mec_products.price_idr` as the whole-IDR unit price and `mec_products.stock_quantity` as the inventory quantity. This defines the destination contract, not a conversion rule for unverified source fields.
-- Do not map `sale_price` to checkout price or use `quantity_to_sell_on_facebook` as sellable stock until their semantics are confirmed. The fact that all observed sale prices are lower than base prices does not establish sale eligibility or currency.
-- The previous assumption to treat a top-level `public.products.price` as IDR is inapplicable: that column does not exist on the live table.
+- Do not use either legacy table as a source for MEC. Their schema/row observations below are audit evidence only and must not drive MEC catalog reads, mapping, imports, or operational decisions.
+- No IDs or records are mapped from `public.products` or any other non-`mec_` source.
+- Legacy ID mapping/import is out of scope and prohibited by the locked MEC-only source boundary.
+- MEC uses `mec_products.price_idr` as the whole-IDR price and `mec_products.stock_quantity` as available-to-sell inventory; owner verification is required before activation.
+- No sale-price logic or stock fallback to legacy feed fields is permitted. MEC has no promotion field/table at present.
+- The UI reads the MEC `price_idr` field directly; no legacy price conversion or inference is performed.
 - Do not copy historical legacy orders/order items into MEC payable orders.
-- Do not convert remote image URLs into Supabase Storage paths without an explicit, reviewed mapping. Do not collapse `sizes` / color variants into a single SKU without an approved variant contract.
+- Images are represented only by `mec_product_images.storage_path`; the `mec-products` bucket is not yet provisioned. The current schema has no variant model, so separate SKUs must be separate MEC product rows until reviewed.
 
 ## Required MEC-native contract verification
 
 Before drafting a catalog migration, establish from authoritative project configuration, source documentation, representative product records, or explicit owner confirmation:
 
-1. Which table is the commercial source of truth for products displayed by `src/pages/Products.tsx`: `public.products`, `public.applestore`, or another catalog/database? Current repo files and database metadata do not establish provenance; identify the owner/system that writes each table.
-2. What currency and unit are used by each selected price field and each purchasable variant? Do not infer unit from magnitude or column names.
-3. Which price is charged: base or sale price, and under what effective-date/eligibility conditions?
-4. Which source field is authoritative sellable stock, and does it represent global stock or channel-specific stock? In `applestore`, `quantity_to_sell_on_facebook` is positive even on all 12 rows marked `out of stock`, so the discrepancy must be resolved first.
-5. Does each `sizes` / color entry represent a distinct SKU? How is a selected variant identified in cart and order creation?
-6. How do source category labels map to MEC categories, and where is stable source-ID provenance stored?
-7. Can remote image URLs be used directly, or is there a verified image mapping?
-8. What storefront currency formatting and price-filter range should be used?
+1. Ensure the owner supplies product/category values specifically for MEC entry; do not query or copy data from any non-`mec_` table or external feed.
+2. Verify each `price_idr` value is a whole-IDR amount approved for that MEC product.
+3. Keep promotions disabled; the current MEC schema has no sale-price field or promotion table.
+4. Verify `stock_quantity` directly as owner-approved available-to-sell stock for MEC.
+5. Treat each separately purchasable SKU as its own MEC product row until a dedicated variant schema is reviewed.
+6. Confirm each `category_id` references an active `mec_categories` row.
+7. Provision and verify the dedicated `mec-products` Storage bucket separately before adding MEC image rows.
+8. Verify the storefront displays whole IDR and the filter maximum is derived from active MEC product prices.
 
 ## Migration acceptance criteria
 
-- Source catalog and currency/price semantics are confirmed.
+- Frontend catalog reads use only MEC-prefixed tables.
 - Storefront query, Product type, currency formatting, filters, cart IDs, and server-side order creation share one consistent contract.
-- Prices convert to positive whole-IDR amounts without implicit rounding; conversion is documented and tested.
+- Prices are read directly from `price_idr`; no legacy conversion, sale-price fallback, or currency inference occurs.
 - Sale-price eligibility, variant identity, stock source, and reservation semantics are verified.
-- Category mapping and source-ID mapping are deterministic and collision-safe.
+- Category mapping uses the MEC `category_id` foreign key; no legacy source-ID mapping is used.
 - Existing MEC IDs and slugs have no conflicting records, or a reviewed resolution exists.
 - Migration is additive and guarded; it does not modify legacy source tables, historical orders, or existing payment records.
 - Read-only preflight and post-import count/sample checks are documented.
