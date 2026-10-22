@@ -124,4 +124,4 @@ BEGIN
       function_owner, function_settings;
   END IF;
 END
-$;
+$$;
