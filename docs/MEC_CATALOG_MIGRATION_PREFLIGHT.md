@@ -27,7 +27,7 @@ The connected Supabase project inspected during this audit is:
 The repository's existing MEC migration history and the Edge Function URLs in `docs/MEC_DUITKU_EDGE_FUNCTIONS.md` reference this same project ref. However, the product data itself does **not** match the repository's current frontend contract, so the correct commercial source catalog is still unconfirmed.
 
 Observed tables and counts:
-- `public.products`: 1 row. Its actual columns include `item_group_id`, `title`, `currency`, and `inventory_quantity`; it does not expose the `id`, `name`, `price`, `category`, `stock` contract currently used by the frontend.
+- `public.products`: 1 row. Its actual columns include `item_group_id`, `title`, `currency`, and `inventory_quantity`; it does not expose the `id`, `name`, `price`, `category`, `stock` contract currently used by the frontend. The sampled row is `group-iphone-14` / `iPhone 14`, currency `IDR`, inventory quantity `50`, and link `https://example.com/product-iphone-14`. Although that row declares IDR, the table has no price field and its link looks like a placeholder, so it cannot currently supply a payable price.
 - `public.applestore`: 222 rows, with text `id`, `title`, integer `price` and `sale_price`, text `category`, `availability`, and `quantity_to_sell_on_facebook`.
 - `public.mec_products`: 0 rows; primary key `id` is UUID and `price_idr` is bigint.
 - `public.mec_categories`: 0 rows; primary key `id` is UUID.
