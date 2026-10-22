@@ -70,7 +70,7 @@ export default function FeaturedProducts() {
           {products.map((product) => (
             <Link
               key={product.id}
-              to={`/products?search=${encodeURIComponent(product.name)}`}
+              to={`/products/${product.id}`}
               className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transform transition duration-300 hover:scale-105 flex flex-col h-full"
             >
               <div className="relative">
