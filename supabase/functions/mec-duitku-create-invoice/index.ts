@@ -11,6 +11,7 @@ const out = (x: unknown, status = 200) => new Response(JSON.stringify(x), { stat
 const hex = (b: Uint8Array) => [...b].map(x => x.toString(16).padStart(2, "0")).join("");
 async function hmac(s: string, k: string) { const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(k), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]); return hex(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(s)))); }
 async function sha(s: string) { return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))); }
+function equal(a: string, b: string) { const x = new TextEncoder().encode(a.toLowerCase()), y = new TextEncoder().encode(b.toLowerCase()); if (x.length !== y.length) return false; let d = 0; for (let i = 0; i < x.length; i++) d |= x[i] ^ y[i]; return d === 0; }
 Deno.serve(async req => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers });
   if (req.method !== "POST") return out({ error: "Method not allowed" }, 405);
@@ -29,7 +30,7 @@ Deno.serve(async req => {
     if (authError || auth.user?.id !== order.user_id) return out({ error: "Order access denied" }, 403);
   } else {
     const token = String(input.guest_token ?? "");
-    if (!token || !order.guest_token_hash || !(await sha(token)).toLowerCase().localeCompare(String(order.guest_token_hash).toLowerCase()) === 0) return out({ error: "Valid guest token required" }, 403);
+    if (!token || !order.guest_token_hash || !equal(await sha(token), String(order.guest_token_hash))) return out({ error: "Valid guest token required" }, 403);
   }
   if (order.order_status !== "pending_payment" || order.inventory_reservation_status !== "reserved") return out({ error: "Order is not payable" }, 409);
   const amount = Number(order.total_amount);
