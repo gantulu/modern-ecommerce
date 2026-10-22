@@ -53,8 +53,6 @@ for i in $(seq 1 40); do
   ) &
 done
 wait
-allowed="$(grep -hFx t "$tmp"/limit-* 2>/dev/null | wc -l | tr -d ' ')"
-# Avoid counting the two order ID files.
 allowed="$(for f in "$tmp"/limit-*; do cat "$f"; done | grep -c '^t$' || true)"
 test "$allowed" = "20"
 
