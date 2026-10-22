@@ -147,3 +147,13 @@ No live SQL, catalog data, secrets, Edge Functions, payment requests, or deploym
 - Added a draft-branch GitHub Actions job to run `npm ci --ignore-scripts`, `npm run build` (TypeScript check + Vite production build), and `npm run lint` for the checkout/catalog frontend.
 - First run [39869101344](https://github.com/gantulu/modern-ecommerce/actions/runs/39869101344) confirmed the production build passes but exposed a pre-existing ESLint 9 incompatibility: the lint script passed removed `--ext` and the config mixed legacy and flat-config syntax. The script and config were corrected on the draft branch; rerun [39869317064](https://github.com/gantulu/modern-ecommerce/actions/runs/39869317064) is in progress, so lint is not yet considered passed.
 - The existing Deno checks for `mec-create-order` and `mec-duitku-create-invoice` passed in the first workflow. `npm ci` also reported 38 dependency vulnerabilities (4 low, 6 moderate, 28 high); no dependency upgrades or `npm audit fix` were run. The payment-attempt SQL test workflow is separate.
+
+
+## Step 3 — payment status and reconciliation contract audit
+
+- Official Duitku POP documentation: https://docs.duitku.com/pop/id/
+- The POP Create Invoice response includes a `reference` that the merchant should persist; the POP HTTP callback carries `merchantOrderId`, `amount`, `resultCode`, `reference`, and HMAC-SHA256 signature material.
+- POP documentation explicitly warns not to use the redirect query parameter `resultCode` to update payment state because the URL can be manually changed by the customer. The HTTP callback, after signature and amount validation, remains the authoritative automated status signal.
+- The POP API reference reviewed for this audit does not document a POP transaction Inquiry Status endpoint. Other Duitku products (for example Disbursement or SNAP) expose different inquiry APIs and must not be assumed compatible with POP.
+- Therefore, do not invent an inquiry URL, request signature, response schema, or cron-based reconciliation API. For an unresolved Create Invoice outcome (`unknown`), keep the attempt blocking and use callback evidence or an explicitly approved merchant-dashboard/manual support process until Duitku confirms a supported POP inquiry contract.
+- Step 3 implementation remains blocked on official confirmation of a supported POP status inquiry/reconciliation mechanism and the frontend order/payment status endpoint contract. No payment attempt or live change was made.
