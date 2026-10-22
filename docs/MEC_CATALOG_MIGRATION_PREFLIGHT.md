@@ -1,5 +1,16 @@
 # MEC catalog source audit and migration preflight
 
+## Locked source boundary — owner decision
+
+**MEC must not use any table outside the `mec_` prefix as an operational data source.** This includes storefront reads, product/category data, pricing, promotions, stock, cart identity, checkout, joins, fallbacks, and imports.
+
+- Allowed operational table family: `mec_*` only.
+- `public.products`, `public.applestore`, Google Sheets, and other non-`mec_` sources are out of scope for MEC. They must not be joined, queried for live MEC behavior, or imported/copied into MEC.
+- The live MEC product and category tables are empty. No fallback to a non-MEC table is permitted; the MEC-native catalog population method requires a separate explicit decision.
+- `src/pages/Products.tsx` currently queries `public.products`, which conflicts with this locked contract and is a frontend implementation gap. Correcting it requires a reviewed code change; this document update does not change application code.
+- Legacy table observations below are retained only as read-only audit evidence of the existing mismatch, not as source recommendations or import candidates.
+
+
 Status: **BLOCKED — authoritative source, price semantics, and storefront currency contract are not yet verified. No catalog migration has been created or applied.**
 
 ## Repository contract
@@ -31,7 +42,7 @@ Observed tables and counts:
 
 The `applestore` table has 222 distinct IDs, no blank titles, no null/nonpositive base prices, no nonpositive non-null sale prices, and no null/negative `quantity_to_sell_on_facebook` values. However, a stock consistency check found 210 rows labelled `in stock` and 12 labelled `out of stock`; all 222 rows have a positive `quantity_to_sell_on_facebook`. Therefore the Facebook quantity field conflicts with the availability status for all 12 out-of-stock rows and cannot be treated as authoritative sellable stock without explaining this discrepancy. The table's RLS is enabled, but its policy `public can do all` grants `ALL` with `USING (true)` and `WITH CHECK (true)` to `public`; this is a data-integrity and security concern and means the table's current contents are not protected by a restrictive catalog write policy. Do not change the policy as part of this catalog audit. These checks establish basic data quality only. They do **not** establish that `applestore` is the intended source for this generic e-commerce repository, that its price fields are IDR, or that `quantity_to_sell_on_facebook` is the authoritative stock field for checkout.
 
-## Provisional mapping contract — not approved for import
+## MEC-native contract — no legacy mapping or import
 
 - Do not select either legacy table as authoritative based only on its name or schema. `public.products` has the only observed explicit `currency = IDR`, but only one feed-shaped row and example.com placeholder links; treat it as test/sample-like evidence, not proof of the full commercial catalog. `public.applestore` has 222 richer variants and storefront links but no currency field, and its feed-specific stock quantity conflicts with 12 `out of stock` availability values.
 - Do not map `public.products.id` to `mec_products.id`: the live source table has no `id` column.
@@ -42,7 +53,7 @@ The `applestore` table has 222 distinct IDs, no blank titles, no null/nonpositiv
 - Do not copy historical legacy orders/order items into MEC payable orders.
 - Do not convert remote image URLs into Supabase Storage paths without an explicit, reviewed mapping. Do not collapse `sizes` / color variants into a single SKU without an approved variant contract.
 
-## Required source and currency verification
+## Required MEC-native contract verification
 
 Before drafting a catalog migration, establish from authoritative project configuration, source documentation, representative product records, or explicit owner confirmation:
 
@@ -72,7 +83,7 @@ Until these criteria pass, catalog migration and production checkout activation 
 
 ## Additional cross-repository evidence found during follow-up audit
 
-A read-only search across the owner's accessible GitHub repositories found related catalog-display configuration in [gantulu/oktavia/app/all.json](https://github.com/gantulu/oktavia/blob/2a3162afc5dd8e148a96b9a5f7bcfbc6ae3cc04f/app/all.json) and [app/home/flashSale.json](https://github.com/gantulu/oktavia/blob/2a3162afc5dd8e148a96b9a5f7bcfbc6ae3cc04f/app/home/flashSale.json). This is a useful lead, **not proof that this is the source that populates modern-ecommerce's live tables**.
+A read-only search across the owner's accessible GitHub repositories found separate catalog-display configuration in [gantulu/oktavia/app/all.json](https://github.com/gantulu/oktavia/blob/2a3162afc5dd8e148a96b9a5f7bcfbc6ae3cc04f/app/all.json) and [app/home/flashSale.json](https://github.com/gantulu/oktavia/blob/2a3162afc5dd8e148a96b9a5f7bcfbc6ae3cc04f/app/home/flashSale.json). This is out-of-scope audit evidence only. Under the locked source boundary, this separate sheet/configuration must not be used to populate MEC or drive MEC behavior.
 
 The related UI config reads catalog data through OpenSheet from a Google Sheet (ID: 1x2Rtyeyq3WR6yFybA8stGP0mdI2dlKvBz6fhx7FIjhQ, tab Sheet1) and maps:
 - price as the crossed-out price when a sale price is present.
@@ -83,4 +94,4 @@ This reveals a **display selection rule** in that separate UI: show sale_price w
 
 The single public.products sample has a sale_price_effective_date of 2026-04-01T00:00:00/2026-04-10T23:59:59 for its 128GB variant. That interval has elapsed as of this audit date (2026-10-23); it is only one feed-shaped sample and does not establish the production promotion policy. The source contract must define whether effective dates are enforced and what happens when a sale price is blank, expired, or malformed.
 
-Still unresolved: confirm whether the oktavia Google Sheet is the actual commercial source for this MEC storefront, confirm the currency/unit used in that sheet, and confirm whether the display rule is also the checkout charging rule. No schema or data changes were made.
+Still unresolved: define the MEC-native catalog population, currency, promotion, variant, and stock contracts. The oktavia sheet is not an allowed MEC source. No schema or data changes were made.
