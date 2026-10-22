@@ -79,16 +79,26 @@ The checkout UI in `src/pages/Cart.tsx` now uses the MEC flow instead of writing
 
 1. Requires an authenticated Supabase session and collects customer name, email, and phone.
 2. Sends only product IDs and quantities to `mec-create-order`; browser prices and totals are display estimates and are not submitted as payment amounts.
-3. The order Edge Function validates the bearer token, obtains the user identity server-side, and calls the service-role-only `mec_create_order_idempotent` RPC.
+3. The order Edge Function validates the bearer token, canonicalizes customer/items, computes a server-side SHA-256 request hash scoped to the authenticated user, and calls the same service-role-only `mec_create_order_idempotent(text,text,text,text,text,jsonb,uuid,text,integer)` RPC defined by PR #4. Same key + same canonical request replays the original order; same key + different request is rejected. The checkout-specific `checkout_idempotency_key` column/RPC overload has been removed to avoid competing contracts.
 4. The RPC serializes retries by checkout idempotency key and delegates inventory locking, database-price calculation, order creation, and stock reservation to the existing atomic `mec_private.create_order` routine.
 5. The frontend calls `mec-duitku-create-invoice` with a stable per-order idempotency key and redirects only to the HTTPS `payment_url` returned by the backend.
 6. The cart is cleared only after a valid payment URL is returned. A failed or uncertain invoice result does not automatically create a replacement payment attempt.
 
 ### Required rollout order
 
-- Review and apply migration `20261023100000_mec_idempotent_checkout_order_v1.sql` in a controlled Supabase environment before deploying `mec-create-order`.
+- Resolve and review the canonical order-idempotency contract in PR #4: `docs/proposed-migrations/20261023_mec_order_idempotency_rate_limit_DRAFT.sql`. It is a dependency, not yet a live migration; do not deploy `mec-create-order` until its SQL is validated and separately approved for a controlled environment.
+- Review the payment-attempt guard draft at `docs/proposed-migrations/20261023_mec_payment_attempt_guard_DRAFT.sql`. Its partial unique index is the database-level invariant for at most one active/unresolved payment attempt per order. It is not applied to any database.
 - Deploy `mec-create-order` with the normal authenticated Edge Function JWT verification enabled. It also validates the bearer token server-side.
 - Confirm `mec-duitku-create-invoice` is deployed with the required server-side secrets and `MEC_DUITKU_RETURN_URL` points to the intended frontend landing route.
 - Build and test the frontend and run the end-to-end sandbox cases before enabling production checkout.
 
 This repository branch does not apply the migration to any database, deploy Edge Functions, set secrets, or enable production traffic. Guest checkout remains outside the frontend flow for this implementation; the current Cart requires sign-in.
+
+
+## Cross-PR contract and concurrency update (draft)
+
+- PR #4 is the canonical order-idempotency contract. PR #5's former `checkout_idempotency_key` column and alternate six-argument RPC migration were removed from the migration directory to avoid a competing contract. The checkout Edge Function now computes the canonical request hash server-side and calls the nine-argument RPC from PR #4.
+- Canonical request fields are authenticated user scope, normalized customer name/email/phone, and normalized item UUID/quantity pairs sorted by product UUID. Duplicate product IDs are merged before hashing and order creation. Reusing a key with a changed customer or item payload returns a conflict rather than silently reusing a different order.
+- Create Invoice retains a preflight lookup for a friendly response, but preflight reads alone do not prevent races. The new draft partial unique index blocks more than one payment row in `created`, `requesting`, `pending`, `unknown`, or `paid` state per order. Concurrent unique-violation handling rereads the existing attempt and returns a conflict/reuse response without issuing another provider request.
+- The payment-attempt index is in `docs/proposed-migrations/20261023_mec_payment_attempt_guard_DRAFT.sql`, deliberately outside `supabase/migrations/`. It includes a preflight that stops if historical duplicate active attempts exist. A disposable SQL test and CI workflow verify the partial-unique-index semantics; neither applies the index to the live database.
+- These changes do not resolve provider inquiry/reconciliation for `unknown` outcomes. Such attempts remain blocked from replacement. The Sandbox end-to-end gate remains closed.
