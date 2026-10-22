@@ -80,7 +80,7 @@ function deployToNetlify() {
     // Check if netlify CLI is installed
     try {
       execSync('netlify --version', { stdio: 'pipe' });
-    } catch (error) {
+    } catch {
       console.log('📦 Installing Netlify CLI...');
       execSync('npm install -g netlify-cli', { stdio: 'inherit' });
     }
