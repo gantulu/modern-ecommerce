@@ -65,3 +65,23 @@ The deployed callback function delegates all event/payment/order/reservation wri
 - Duitku POP Create Invoice and callback: https://docs.duitku.com/pop/id/
 - Supabase Edge Functions: https://supabase.com/docs/guides/functions
 - Supabase Edge Function secrets: https://supabase.com/docs/guides/functions/secrets
+
+## Frontend checkout integration — branch implementation
+
+The checkout UI in `src/pages/Cart.tsx` now uses the MEC flow instead of writing to legacy `orders` / `order_items` tables:
+
+1. Requires an authenticated Supabase session and collects customer name, email, and phone.
+2. Sends only product IDs and quantities to `mec-create-order`; browser prices and totals are display estimates and are not submitted as payment amounts.
+3. The order Edge Function validates the bearer token, obtains the user identity server-side, and calls the service-role-only `mec_create_order_idempotent` RPC.
+4. The RPC serializes retries by checkout idempotency key and delegates inventory locking, database-price calculation, order creation, and stock reservation to the existing atomic `mec_private.create_order` routine.
+5. The frontend calls `mec-duitku-create-invoice` with a stable per-order idempotency key and redirects only to the HTTPS `payment_url` returned by the backend.
+6. The cart is cleared only after a valid payment URL is returned. A failed or uncertain invoice result does not automatically create a replacement payment attempt.
+
+### Required rollout order
+
+- Review and apply migration `20261023100000_mec_idempotent_checkout_order_v1.sql` in a controlled Supabase environment before deploying `mec-create-order`.
+- Deploy `mec-create-order` with the normal authenticated Edge Function JWT verification enabled. It also validates the bearer token server-side.
+- Confirm `mec-duitku-create-invoice` is deployed with the required server-side secrets and `MEC_DUITKU_RETURN_URL` points to the intended frontend landing route.
+- Build and test the frontend and run the end-to-end sandbox cases before enabling production checkout.
+
+This repository branch does not apply the migration to any database, deploy Edge Functions, set secrets, or enable production traffic. Guest checkout remains outside the frontend flow for this implementation; the current Cart requires sign-in.
