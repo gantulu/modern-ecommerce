@@ -126,8 +126,8 @@ These are draft-only code changes. They do not prove function ownership/grants a
 ### Step 2 gaps still blocking approval
 
 - New disposable CI now applies the real MEC schema migration and tests the real product row locks, inventory decrement, order-item insert, and rollback after an injected order-item failure. Its latest run is pending; it still does not test inventory release/restock idempotency or the payment callback race.
-- Need deterministic tests for two different idempotency keys competing for the final stock unit, overlapping multi-product carts (deadlock resistance), and a failure after stock decrement/order-item insertion proving all effects roll back.
-- Need verify inventory release/restock is idempotent and cannot restore stock twice; verify payment-success callback racing reservation expiry/release remains an explicit reconciliation anomaly rather than silently restoring or consuming stock twice.
+- Disposable CI now includes deterministic tests for two different idempotency keys competing for the final stock unit and a failure after stock decrement/order-item insertion proving rollback. A release-twice assertion also verifies that stock is restored once only. The latest CI run for these additions is pending.
+- Still need a concurrent overlapping multi-product cart test for deadlock resistance and a payment-success callback racing reservation expiry/release test proving the anomaly is recorded rather than silently restoring or consuming stock twice.
 - The target catalog is empty, so live checkout behavior cannot be functionally exercised with current data. No live writes or payment attempts are authorized.
 
 Next branch-only work is to extend disposable transaction tests and document their scope. Step 3 (payment state/reconciliation) remains dependent on these transaction results and the missing status/inquiry contract.
