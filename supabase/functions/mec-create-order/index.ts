@@ -19,6 +19,12 @@ const respond = (body: unknown, status = 200) =>
 
 type CheckoutItem = { product_id: string; quantity: number };
 
+const encoder = new TextEncoder();
+const hex = (bytes: Uint8Array) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+async function sha256(value: string) {
+  return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(value))));
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers });
   if (req.method !== "POST") return respond({ error: "Method not allowed" }, 405);
@@ -56,7 +62,7 @@ Deno.serve(async (req) => {
     return respond({ error: "Cart must contain between 1 and 100 item entries" }, 400);
   }
 
-  const items: CheckoutItem[] = [];
+  const mergedItems = new Map<string, number>();
   for (const entry of input.items) {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
       return respond({ error: "Each cart item must contain product_id and quantity" }, 400);
@@ -67,23 +73,42 @@ Deno.serve(async (req) => {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(productId)) {
       return respond({ error: "Invalid product identifier in cart" }, 400);
     }
-    if (typeof quantity !== "number" || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 1000) {
-      return respond({ error: "Each item quantity must be an integer between 1 and 1000" }, 400);
+    if (typeof quantity !== "number" || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 100) {
+      return respond({ error: "Each item quantity must be an integer between 1 and 100" }, 400);
     }
-    items.push({ product_id: productId, quantity });
+    const id = productId.toLowerCase();
+    const next = (mergedItems.get(id) ?? 0) + quantity;
+    if (next > 100) return respond({ error: "Combined quantity for a product cannot exceed 100" }, 400);
+    mergedItems.set(id, next);
   }
+  const items: CheckoutItem[] = [...mergedItems.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([product_id, quantity]) => ({ product_id, quantity }));
+
+  const canonicalRequest = JSON.stringify({
+    identityScope: "user:" + authData.user.id,
+    customer: { name: customerName, email: customerEmail.toLowerCase(), phone: customerPhone },
+    items,
+  });
+  const requestHash = await sha256(canonicalRequest);
 
   const { data, error } = await db.rpc("mec_create_order_idempotent", {
-    p_checkout_idempotency_key: idempotencyKey,
+    p_idempotency_key: idempotencyKey,
+    p_request_hash: requestHash,
     p_customer_name: customerName,
-    p_customer_email: customerEmail,
+    p_customer_email: customerEmail.toLowerCase(),
     p_customer_phone: customerPhone,
     p_items: items,
     p_user_id: authData.user.id,
+    p_guest_token_hash: null,
+    p_reservation_minutes: 15,
   });
 
   if (error) {
-    if (error.code === "23514" || error.code === "22023") {
+    if (error.code === "22023") {
+      return respond({ error: "Invalid order request or idempotency key reused with different checkout details" }, 409);
+    }
+    if (error.code === "23514" || error.code === "22003") {
       return respond({ error: "Cart validation failed: a product may be inactive or stock may be insufficient" }, 409);
     }
     if (error.code === "42501") return respond({ error: "Checkout authorization failed" }, 403);
@@ -101,6 +126,6 @@ Deno.serve(async (req) => {
       subtotal_amount: order.subtotal_amount,
       inventory_reserved_until: order.inventory_reserved_until,
     },
-    reused: Boolean(order.reused),
+    replayed: Boolean(order.replayed),
   });
 });
