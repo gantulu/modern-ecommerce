@@ -17,6 +17,8 @@ DECLARE
   v_guard_second_payment_id uuid;
   v_guard_order_number text;
   v_unique_violation_seen boolean;
+  v_deleted_buckets bigint;
+  v_invalid_retention_rejected boolean := false;
 BEGIN
   IF has_function_privilege('anon', 'public.mec_record_duitku_invoice_result(uuid,text,text,text,text,text)', 'EXECUTE')
      OR has_function_privilege('authenticated', 'public.mec_record_duitku_invoice_result(uuid,text,text,text,text,text)', 'EXECUTE')
@@ -28,6 +30,32 @@ BEGIN
      OR has_function_privilege('authenticated', 'public.mec_consume_status_rate_limit(text,integer,integer)', 'EXECUTE')
      OR NOT has_function_privilege('service_role', 'public.mec_consume_status_rate_limit(text,integer,integer)', 'EXECUTE') THEN
     RAISE EXCEPTION 'Unexpected status-rate-limit RPC grants';
+  END IF;
+
+  IF has_function_privilege('anon', 'public.mec_cleanup_status_rate_limit_buckets(interval)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.mec_cleanup_status_rate_limit_buckets(interval)', 'EXECUTE')
+     OR NOT has_function_privilege('service_role', 'public.mec_cleanup_status_rate_limit_buckets(interval)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'Unexpected rate-limit cleanup RPC grants';
+  END IF;
+
+  INSERT INTO public.mec_status_rate_limit_buckets(
+    bucket_key_hash, window_started_at, request_count, updated_at
+  ) VALUES (
+    repeat('c', 64), now() - interval '8 days', 1, now() - interval '8 days'
+  );
+  v_deleted_buckets := public.mec_cleanup_status_rate_limit_buckets(interval '7 days');
+  IF v_deleted_buckets <> 1
+     OR EXISTS (SELECT 1 FROM public.mec_status_rate_limit_buckets WHERE bucket_key_hash = repeat('c', 64)) THEN
+    RAISE EXCEPTION 'Rate-limit cleanup did not remove an expired bucket';
+  END IF;
+
+  BEGIN
+    PERFORM public.mec_cleanup_status_rate_limit_buckets(interval '31 days');
+  EXCEPTION WHEN SQLSTATE '22023' THEN
+    v_invalid_retention_rejected := true;
+  END;
+  IF NOT v_invalid_retention_rejected THEN
+    RAISE EXCEPTION 'Rate-limit cleanup accepted a retention interval above the configured maximum';
   END IF;
 
   v_result := public.mec_consume_status_rate_limit(repeat('a', 64), 2, 60);
