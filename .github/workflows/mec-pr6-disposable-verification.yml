@@ -47,20 +47,29 @@ jobs:
       MEC_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@v4
+      - name: Fetch PR4 draft contract and disposable fixtures
+        run: |
+          git fetch --no-tags origin feat/mec-order-idempotency-draft
+          mkdir -p "$RUNNER_TEMP/pr4"
+          git show FETCH_HEAD:tests/sql/mec-order-idempotency-fixture-bootstrap.sql > "$RUNNER_TEMP/pr4/fixture-bootstrap.sql"
+          git show FETCH_HEAD:tests/sql/mec-order-idempotency-fixture.sql > "$RUNNER_TEMP/pr4/fixture.sql"
+          git show FETCH_HEAD:docs/proposed-migrations/20261023_mec_order_idempotency_rate_limit_DRAFT.sql > "$RUNNER_TEMP/pr4/order-idempotency.sql"
+          git show FETCH_HEAD:tests/sql/mec-order-idempotency-smoke.sql > "$RUNNER_TEMP/pr4/smoke.sql"
+          git show FETCH_HEAD:tests/sql/mec-order-idempotency-concurrency.sh > "$RUNNER_TEMP/pr4/concurrency.sh"
       - name: Install PostgreSQL client
         run: |
           sudo apt-get update
           sudo apt-get install --yes postgresql-client
       - name: Bootstrap minimal Supabase Auth roles and fixture
-        run: psql -X -v ON_ERROR_STOP=1 -f tests/sql/mec-order-idempotency-fixture-bootstrap.sql
+        run: psql -X -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/pr4/fixture-bootstrap.sql"
       - name: Apply MEC base schema to disposable PostgreSQL
         run: psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261022180316_create_mec_ecommerce_v1.sql
       - name: Apply atomic Duitku callback base RPC
         run: psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261022182552_mec_atomic_duitku_callback_v1.sql
       - name: Apply PR4 draft order idempotency contract
-        run: psql -X -v ON_ERROR_STOP=1 -f docs/proposed-migrations/20261023_mec_order_idempotency_rate_limit_DRAFT.sql
+        run: psql -X -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/pr4/order-idempotency.sql"
       - name: Seed disposable MEC products and rollback trigger
-        run: psql -X -v ON_ERROR_STOP=1 -f tests/sql/mec-order-idempotency-fixture.sql
+        run: psql -X -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/pr4/fixture.sql"
       - name: Apply PR5 draft active payment-attempt guard
         run: psql -X -v ON_ERROR_STOP=1 -f docs/proposed-migrations/20261023_mec_payment_attempt_guard_DRAFT.sql
       - name: Apply PR6 atomic invoice-result migration
@@ -70,9 +79,9 @@ jobs:
       - name: Apply source-controlled callback RPC migration
         run: psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261023110002_mec_process_duitku_callback.sql
       - name: Run PR4 order-idempotency SQL contract tests
-        run: psql -X -v ON_ERROR_STOP=1 -f tests/sql/mec-order-idempotency-smoke.sql
+        run: psql -X -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/pr4/smoke.sql"
       - name: Run PR4 concurrent order-idempotency tests
-        run: bash tests/sql/mec-order-idempotency-concurrency.sh
+        run: bash "$RUNNER_TEMP/pr4/concurrency.sh"
       - name: Run PR5 payment-attempt guard contract tests
         run: psql -X -v ON_ERROR_STOP=1 -f tests/sql/mec-payment-attempt-guard.sql
       - name: Run PR5 concurrent payment-attempt tests
