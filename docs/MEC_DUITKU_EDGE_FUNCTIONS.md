@@ -212,7 +212,7 @@ No live SQL, catalog data, secrets, Edge Functions, payment requests, or deploym
 - The previous per-isolate in-memory limiter is not used. Requests call the proposed atomic `public.mec_consume_status_rate_limit` RPC after bearer-token validation. The limiter is keyed by the authenticated Supabase user ID, and only a SHA-256 hash of that key is stored; it does not trust caller-supplied IP headers.
 - CORS uses an explicit server-side `MEC_ALLOWED_ORIGINS` comma-separated allowlist. No production origin has been verified from the repository evidence, so the endpoint fails closed with `STATUS_API_ORIGIN_NOT_CONFIGURED` until a verified origin is configured. Do not deploy or set this environment variable based on an assumption.
 - Proposed migration: `supabase/migrations/20261023110001_mec_status_rate_limit.sql`. It has been applied only to a disposable PostgreSQL database in CI, not to the configured Supabase project.
-- The rate-limit bucket table currently has no cleanup policy/function in this PR. Add bounded retention or a scheduled cleanup mechanism before production rollout; do not run an unbounded persistent bucket table in production.
+- The migration now includes the bounded `public.mec_cleanup_status_rate_limit_buckets(interval)` RPC, restricted to `service_role`, with a 1-hour to 30-day retention bound. A scheduler has not been configured; choose and verify a scheduled cleanup policy before production rollout so stale buckets do not accumulate indefinitely.
 
 ### Verification status and remaining gates
 
