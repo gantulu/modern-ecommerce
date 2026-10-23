@@ -33,7 +33,7 @@ function headersFor(origin: string | null): HeadersInit {
   const headers: Record<string, string> = { ...jsonHeaders };
   if (origin && allowedOrigins.has(origin)) {
     headers["access-control-allow-origin"] = origin;
-    headers["access-control-allow-headers"] = "authorization, apikey, content-type, x-mec-guest-token";
+    headers["access-control-allow-headers"] = "authorization, apikey, content-type";
     headers["access-control-allow-methods"] = "GET, OPTIONS";
     headers["access-control-max-age"] = "600";
   }
@@ -74,12 +74,8 @@ Deno.serve(async (request: Request) => {
   }
 
   const accessToken = bearerToken(request);
-  const guestToken = request.headers.get("x-mec-guest-token")?.trim() ?? "";
-  if (!accessToken && !guestToken) {
+  if (!accessToken) {
     return respond({ success: false, error: "AUTHENTICATION_REQUIRED" }, 401, origin);
-  }
-  if (guestToken.length > 512) {
-    return respond({ success: false, error: "PAYMENT_NOT_AVAILABLE" }, 404, origin);
   }
 
   const db = createClient(supabaseUrl, serviceRoleKey, {
@@ -124,7 +120,7 @@ Deno.serve(async (request: Request) => {
     const authorized = await authorizeOrderStatusRead(
       { user_id: order.user_id, guest_token_hash: order.guest_token_hash },
       accessToken,
-      guestToken || null,
+      null,
       async (token) => {
         const { data, error } = await db.auth.getUser(token);
         return !error && data.user?.id ? data.user.id : null;
