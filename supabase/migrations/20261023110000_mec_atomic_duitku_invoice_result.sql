@@ -39,7 +39,7 @@ DECLARE
   v_status text;
   v_changed boolean := false;
 BEGIN
-  IF p_payment_id IS NULL OR p_outcome NOT IN ('pending','failed','unknown') THEN
+  IF p_payment_id IS NULL OR p_outcome IS NULL OR p_outcome NOT IN ('pending','failed','unknown') THEN
     RAISE EXCEPTION 'Invalid payment ID or invoice response outcome' USING ERRCODE = '22023';
   END IF;
 
