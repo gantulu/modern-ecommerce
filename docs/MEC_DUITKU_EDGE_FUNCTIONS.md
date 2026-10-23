@@ -42,7 +42,7 @@ JSON body:
 - The server derives amount and item details from MEC order rows; it ignores client-supplied price/total.
 - Allowed expiry periods are 5, 10, or 60 minutes.
 - A timeout/uncertain Create Invoice response is stored as `unknown`. Do not generate a replacement attempt until reconciliation.
-- This endpoint uses `verify_jwt=false` at the gateway because guest checkout is supported; it performs explicit bearer-token validation for authenticated orders and SHA-256 guest-token verification for guest orders.
+- This endpoint uses `verify_jwt=false` at the gateway and performs explicit bearer-token validation for authenticated orders or SHA-256 guest-token verification for a guest order. **The current repository checkout flow is authenticated-only**: `mec-create-order` requires a valid user session, Cart redirects signed-out users to `/auth`, and the payment-status endpoint requires a bearer token. Guest invoice handling is only a lower-level capability for an already-created guest order; it does not mean the current frontend supports guest checkout.
 
 ## Callback behavior
 
@@ -208,7 +208,8 @@ No live SQL, catalog data, secrets, Edge Functions, payment requests, or deploym
 - The API requires an authenticated Supabase bearer token, validates order ownership, and returns the same not-found response for nonexistent and inaccessible orders. This matches the current Cart flow, which requires sign-in; guest checkout is not enabled in the frontend.
 - The previous per-isolate in-memory limiter is not used. Requests call the proposed atomic `public.mec_consume_status_rate_limit` RPC after bearer-token validation. The limiter is keyed by the authenticated Supabase user ID, and only a SHA-256 hash of that key is stored; it does not trust caller-supplied IP headers.
 - CORS uses an explicit server-side `MEC_ALLOWED_ORIGINS` comma-separated allowlist. No production origin has been verified from the repository evidence, so the endpoint fails closed with `STATUS_API_ORIGIN_NOT_CONFIGURED` until a verified origin is configured. Do not deploy or set this environment variable based on an assumption.
-- Proposed migration: `supabase/migrations/20261023110001_mec_status_rate_limit.sql`. It has not been applied to any database.
+- Proposed migration: `supabase/migrations/20261023110001_mec_status_rate_limit.sql`. It has been applied only to a disposable PostgreSQL database in CI, not to the configured Supabase project.
+- The rate-limit bucket table currently has no cleanup policy/function in this PR. Add bounded retention or a scheduled cleanup mechanism before production rollout; do not run an unbounded persistent bucket table in production.
 
 ### Verification gates still open
 
