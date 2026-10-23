@@ -131,7 +131,7 @@ Deno.serve(async req => {
       p_payment_id: payment.id,
       p_outcome: known ? "failed" : "unknown",
       p_provider_reference: typeof result.reference === "string" ? result.reference : null,
-      p_payment_url: typeof result.paymentUrl === "string" ? result.paymentUrl : null,
+      p_payment_url: typeof result.paymentUrl === "string" && result.paymentUrl.startsWith("https://") ? result.paymentUrl : null,
       p_provider_status_code: code || null,
       p_provider_status_message: String(result.statusMessage ?? "Unconfirmed provider response").slice(0, 500),
     });
