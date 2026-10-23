@@ -43,10 +43,10 @@ BEGIN
         WHEN existing.window_started_at
              + make_interval(secs => p_window_seconds) <= v_now
           THEN v_now
-        ELSE public.mec_status_rate_limit_buckets.window_started_at
+        ELSE existing.window_started_at
       END,
       request_count = CASE
-        WHEN public.mec_status_rate_limit_buckets.window_started_at
+        WHEN existing.window_started_at
              + make_interval(secs => p_window_seconds) <= v_now
           THEN 1
         ELSE existing.request_count + 1
