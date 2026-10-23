@@ -127,7 +127,25 @@ export default function Cart() {
         );
       }
 
-      const paymentUrl = paymentResult?.payment?.payment_url;
+      const payment = paymentResult?.payment;
+      const paymentStatus = payment?.payment_status;
+      if (paymentStatus === 'paid') {
+        // A signed callback may have completed before the Create Invoice response arrived.
+        // Do not send the customer back to an already-settled payment URL.
+        sessionStorage.removeItem(orderKeyStorage);
+        sessionStorage.removeItem(paymentKeyStorage);
+        clearCart();
+        navigate('/orders');
+        return;
+      }
+      if (paymentStatus !== 'pending') {
+        throw new Error(
+          paymentResult?.error ||
+          'The payment state is unresolved or no longer payable. Do not create another attempt until it is reconciled.',
+        );
+      }
+
+      const paymentUrl = payment?.payment_url;
       if (typeof paymentUrl !== 'string' || !paymentUrl.startsWith('https://')) {
         throw new Error(paymentResult?.error || 'No valid Duitku payment URL was returned. Reconcile the payment before retrying.');
       }
