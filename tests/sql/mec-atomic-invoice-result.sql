@@ -10,6 +10,7 @@ DECLARE
   v_order_number text;
   v_merchant_order_id text;
   v_status text;
+  v_expected_status text;
   v_result jsonb;
 BEGIN
   IF has_function_privilege('anon', 'public.mec_record_duitku_invoice_result(uuid,text,text,text,text,text)', 'EXECUTE')
@@ -62,7 +63,14 @@ BEGIN
       'test-' || replace(v_payment_id::text, '-', ''), now() + interval '60 minutes'
     );
 
-    IF v_case = 'invoice_before_callback' THEN
+    v_expected_status := 'paid';
+
+    IF v_case = 'timeout_without_callback_stays_unknown' THEN
+      v_result := public.mec_record_duitku_invoice_result(
+        v_payment_id, 'unknown', NULL, NULL, NULL, 'Create Invoice transport outcome unknown'
+      );
+      v_expected_status := 'unknown';
+    ELSIF v_case = 'invoice_before_callback' THEN
       PERFORM public.mec_record_duitku_invoice_result(
         v_payment_id, 'pending', 'REF-' || v_payment_id::text,
         'https://example.invalid/pay', '00', 'SUCCESS'
@@ -94,8 +102,8 @@ BEGIN
     SELECT payment_status INTO v_status
     FROM public.mec_payments WHERE id = v_payment_id;
 
-    IF v_status <> 'paid' THEN
-      RAISE EXCEPTION 'Case % downgraded paid to %', v_case, v_status;
+    IF v_status <> v_expected_status THEN
+      RAISE EXCEPTION 'Case % expected status %, got %', v_case, v_expected_status, v_status;
     END IF;
 
     IF (SELECT count(*) FROM public.mec_payment_provider_responses WHERE payment_id = v_payment_id) <> 1 THEN
