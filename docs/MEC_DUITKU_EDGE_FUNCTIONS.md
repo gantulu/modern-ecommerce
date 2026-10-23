@@ -181,3 +181,38 @@ No live SQL, catalog data, secrets, Edge Functions, payment requests, or deploym
 ### CI status snapshot — 2026-10-23
 - Fresh checkout workflow: [39869943212](https://github.com/gantulu/modern-ecommerce/actions/runs/39869943212) is in progress. Its frontend job includes the new dependency audit report and reruns build + lint; do not treat either the lint or package-level audit as complete until the workflow finishes.
 - Payment-attempt guard workflow: [39869942992](https://github.com/gantulu/modern-ecommerce/actions/runs/39869942992) is in progress.
+
+
+## Atomic payment-state and status API hardening — draft branch update (2026-10-23)
+
+### Invoice response transition contract
+
+- The Create Invoice Edge Function no longer directly updates `mec_payments.payment_status` after provider responses. Success, provider rejection, malformed response, and transport timeout call `public.mec_record_duitku_invoice_result`.
+- The RPC locks the payment row with `FOR UPDATE`. A provider response may change status only while the payment remains `requesting`; if a valid callback already changed the payment to `paid`, late invoice success/failure/timeout metadata cannot downgrade it.
+- Provider response metadata is recorded separately in `public.mec_payment_provider_responses`. Current response fields are mirrored to the existing `mec_payments` columns for compatibility with the checkout response shape.
+- `unknown` remains unresolved and blocks replacement attempts in the Create Invoice preflight. No POP Inquiry endpoint or automated inquiry job was invented.
+- Proposed migration: `supabase/migrations/20261023110000_mec_atomic_duitku_invoice_result.sql`. It has been committed only to the isolated fix branch and has **not** been applied to any database.
+
+### Callback versus inventory-release lock order
+
+- Read-only inspection of the current target's `mec_process_duitku_callback` shows it locks the payment row before the order row.
+- The draft migration changes `mec_private.release_order_inventory` to lock all payment rows for the order in deterministic ID order before locking the order. This prevents release from holding the order lock while a callback holds the payment lock, and makes callback success win consistently when it obtains the payment lock first.
+- `tests/sql/mec-callback-reservation-release-race.sh` tests the two-session race against an explicitly supplied disposable database via `MEC_TEST_DATABASE_URL`. It must not be pointed at production.
+- `tests/sql/mec-atomic-invoice-result.sql` covers callback-first, invoice-first, timeout-after-paid, and failed-response-after-paid orderings, plus effective execute grants for the new RPC. These tests have been added but not executed in this editing session.
+
+### Payment status API and rate limiting
+
+- Added `supabase/functions/mec-duitku-payment-status/` to the draft branch. It returns `payment.payment_status`, `payment.order_status`, `payment.merchant_order_id`, and `payment.updated_at`, consistent with the MEC payment/order status contract.
+- The API validates authenticated-user ownership or a guest token hash and returns the same not-found response for nonexistent and inaccessible orders.
+- The previous per-isolate in-memory limiter is not used. Requests call the proposed atomic `public.mec_consume_status_rate_limit` RPC; the client address is hashed before storage, and only the trusted edge-provided `cf-connecting-ip` header is used (fallback is a shared `ip:unknown` bucket).
+- CORS uses an explicit server-side `MEC_ALLOWED_ORIGINS` comma-separated allowlist. No production origin has been verified from the repository evidence, so the endpoint fails closed with `STATUS_API_ORIGIN_NOT_CONFIGURED` until a verified origin is configured. Do not deploy or set this environment variable based on an assumption.
+- Proposed migration: `supabase/migrations/20261023110001_mec_status_rate_limit.sql`. It has not been applied to any database.
+
+### Verification gates still open
+
+1. Run SQL syntax and migration tests against a disposable PostgreSQL/Supabase environment.
+2. Run the callback/release two-session race test and the invoice-result ordering tests.
+3. Verify effective grants and security-definer ownership after applying the proposal in a representative non-production environment.
+4. Verify the actual frontend origin and configure `MEC_ALLOWED_ORIGINS` only after confirmation.
+5. Re-run Deno type checks, frontend build/lint, and review the current dependency audit output.
+6. Only after these gates, consider Sandbox E2E. Sandbox payment testing, live migrations, secret changes, deployment, and merge remain outside this draft change and require separate explicit authorization.
