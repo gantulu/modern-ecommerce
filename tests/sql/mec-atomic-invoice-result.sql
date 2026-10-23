@@ -12,10 +12,8 @@ DECLARE
   v_status text;
   v_result jsonb;
 BEGIN
-  IF NOT has_function_privilege('anon', 'public.mec_record_duitku_invoice_result(uuid,text,text,text,text,text)', 'EXECUTE')
-       = false
-     OR NOT has_function_privilege('authenticated', 'public.mec_record_duitku_invoice_result(uuid,text,text,text,text,text)', 'EXECUTE')
-       = false
+  IF has_function_privilege('anon', 'public.mec_record_duitku_invoice_result(uuid,text,text,text,text,text)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.mec_record_duitku_invoice_result(uuid,text,text,text,text,text)', 'EXECUTE')
      OR NOT has_function_privilege('service_role', 'public.mec_record_duitku_invoice_result(uuid,text,text,text,text,text)', 'EXECUTE') THEN
     RAISE EXCEPTION 'Unexpected invoice-result RPC grants';
   END IF;
@@ -38,7 +36,7 @@ BEGIN
     ) VALUES (
       v_order_id, v_order_number, 'Atomic Test', 'atomic-test@example.invalid', '0000000000', 'IDR',
       100, 100, 'pending_payment', 'reserved', now() + interval '15 minutes',
-      encode(digest(v_order_id::text, 'sha256'), 'hex')
+      'test-token-' || replace(v_order_id::text, '-', '')
     );
 
     INSERT INTO public.mec_payments (
