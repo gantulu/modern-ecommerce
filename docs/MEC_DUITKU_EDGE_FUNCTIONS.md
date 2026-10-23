@@ -197,13 +197,13 @@ No live SQL, catalog data, secrets, Edge Functions, payment requests, or deploym
 
 - Read-only inspection of the current target's `mec_process_duitku_callback` shows it locks the payment row before the order row.
 - The draft migration changes `mec_private.release_order_inventory` to lock all payment rows for the order in deterministic ID order before locking the order. This prevents release from holding the order lock while a callback holds the payment lock, and makes callback success win consistently when it obtains the payment lock first.
-- `tests/sql/mec-callback-reservation-release-race.sh` tests the two-session race against an explicitly supplied disposable database via `MEC_TEST_DATABASE_URL`. It must not be pointed at production.
+- `tests/sql/mec-callback-reservation-release-race.sh` and `tests/sql/mec-reservation-release-before-callback-race.sh` test both two-session lock orderings against an explicitly supplied disposable database via `MEC_TEST_DATABASE_URL`. They must not be pointed at production.
 - `tests/sql/mec-atomic-invoice-result.sql` covers callback-first, invoice-first, timeout-after-paid, and failed-response-after-paid orderings, plus effective execute grants for the new RPC. These tests have been added but not executed in this editing session.
 
 ### Payment status API and rate limiting
 
 - Added `supabase/functions/mec-duitku-payment-status/` to the draft branch. It returns `payment.payment_status`, `payment.order_status`, `payment.merchant_order_id`, and `payment.updated_at`, consistent with the MEC payment/order status contract.
-- The API validates authenticated-user ownership or a guest token hash and returns the same not-found response for nonexistent and inaccessible orders.
+- The API requires an authenticated Supabase bearer token, validates order ownership, and returns the same not-found response for nonexistent and inaccessible orders. This matches the current Cart flow, which requires sign-in; guest checkout is not enabled in the frontend.
 - The previous per-isolate in-memory limiter is not used. Requests call the proposed atomic `public.mec_consume_status_rate_limit` RPC; the client address is hashed before storage, and only the trusted edge-provided `cf-connecting-ip` header is used (fallback is a shared `ip:unknown` bucket).
 - CORS uses an explicit server-side `MEC_ALLOWED_ORIGINS` comma-separated allowlist. No production origin has been verified from the repository evidence, so the endpoint fails closed with `STATUS_API_ORIGIN_NOT_CONFIGURED` until a verified origin is configured. Do not deploy or set this environment variable based on an assumption.
 - Proposed migration: `supabase/migrations/20261023110001_mec_status_rate_limit.sql`. It has not been applied to any database.
