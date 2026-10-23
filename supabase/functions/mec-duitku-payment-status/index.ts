@@ -83,8 +83,14 @@ Deno.serve(async (request: Request) => {
   });
 
   try {
-    // Durable database-backed rate limit; the in-memory per-isolate limiter is not used.
-    const keyHash = await sha256Hex(rateLimitKey(request));
+    const { data: authData, error: authError } = await db.auth.getUser(accessToken);
+    if (authError || !authData.user?.id) {
+      return respond({ success: false, error: "AUTHENTICATION_REQUIRED" }, 401, origin);
+    }
+
+    // Durable database-backed rate limit keyed by authenticated user, not isolate memory
+    // or caller-controlled IP headers. Only the SHA-256 key is stored in PostgreSQL.
+    const keyHash = await sha256Hex(rateLimitKey(authData.user.id));
     const { data: rateLimit, error: rateLimitError } = await db.rpc("mec_consume_status_rate_limit", {
       p_key_hash: keyHash,
       p_limit: 30,
@@ -121,10 +127,7 @@ Deno.serve(async (request: Request) => {
       { user_id: order.user_id, guest_token_hash: order.guest_token_hash },
       accessToken,
       null,
-      async (token) => {
-        const { data, error } = await db.auth.getUser(token);
-        return !error && data.user?.id ? data.user.id : null;
-      },
+      async (token) => token === accessToken ? authData.user.id : null,
     );
     if (!authorized) return respond({ success: false, error: "PAYMENT_NOT_AVAILABLE" }, 404, origin);
 
