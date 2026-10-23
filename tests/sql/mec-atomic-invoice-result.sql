@@ -38,7 +38,8 @@ BEGIN
     'callback_before_invoice',
     'invoice_before_callback',
     'timeout_after_callback_success',
-    'failed_response_after_callback_success'
+    'failed_response_after_callback_success',
+    'timeout_without_callback_stays_unknown'
   ]) LOOP
     v_order_id := gen_random_uuid();
     v_payment_id := gen_random_uuid();
