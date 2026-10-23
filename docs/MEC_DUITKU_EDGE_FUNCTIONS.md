@@ -204,7 +204,7 @@ No live SQL, catalog data, secrets, Edge Functions, payment requests, or deploym
 
 - Added `supabase/functions/mec-duitku-payment-status/` to the draft branch. It returns `payment.payment_status`, `payment.order_status`, `payment.merchant_order_id`, and `payment.updated_at`, consistent with the MEC payment/order status contract.
 - The API requires an authenticated Supabase bearer token, validates order ownership, and returns the same not-found response for nonexistent and inaccessible orders. This matches the current Cart flow, which requires sign-in; guest checkout is not enabled in the frontend.
-- The previous per-isolate in-memory limiter is not used. Requests call the proposed atomic `public.mec_consume_status_rate_limit` RPC; the client address is hashed before storage, and only the trusted edge-provided `cf-connecting-ip` header is used (fallback is a shared `ip:unknown` bucket).
+- The previous per-isolate in-memory limiter is not used. Requests call the proposed atomic `public.mec_consume_status_rate_limit` RPC after bearer-token validation. The limiter is keyed by the authenticated Supabase user ID, and only a SHA-256 hash of that key is stored; it does not trust caller-supplied IP headers.
 - CORS uses an explicit server-side `MEC_ALLOWED_ORIGINS` comma-separated allowlist. No production origin has been verified from the repository evidence, so the endpoint fails closed with `STATUS_API_ORIGIN_NOT_CONFIGURED` until a verified origin is configured. Do not deploy or set this environment variable based on an assumption.
 - Proposed migration: `supabase/migrations/20261023110001_mec_status_rate_limit.sql`. It has not been applied to any database.
 
