@@ -18,6 +18,21 @@ BEGIN
     RAISE EXCEPTION 'Unexpected invoice-result RPC grants';
   END IF;
 
+  IF has_function_privilege('anon', 'public.mec_consume_status_rate_limit(text,integer,integer)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.mec_consume_status_rate_limit(text,integer,integer)', 'EXECUTE')
+     OR NOT has_function_privilege('service_role', 'public.mec_consume_status_rate_limit(text,integer,integer)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'Unexpected status-rate-limit RPC grants';
+  END IF;
+
+  v_result := public.mec_consume_status_rate_limit(repeat('a', 64), 2, 60);
+  IF v_result->>'allowed' <> 'true' THEN RAISE EXCEPTION 'First rate-limited request should be allowed'; END IF;
+  v_result := public.mec_consume_status_rate_limit(repeat('a', 64), 2, 60);
+  IF v_result->>'allowed' <> 'true' THEN RAISE EXCEPTION 'Second rate-limited request should be allowed'; END IF;
+  v_result := public.mec_consume_status_rate_limit(repeat('a', 64), 2, 60);
+  IF v_result->>'allowed' <> 'false' OR coalesce((v_result->>'retry_after_seconds')::integer, 0) < 1 THEN
+    RAISE EXCEPTION 'Third rate-limited request should be rejected with a retry interval';
+  END IF;
+
   FOR v_case IN SELECT unnest(ARRAY[
     'callback_before_invoice',
     'invoice_before_callback',
