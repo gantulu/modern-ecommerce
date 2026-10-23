@@ -197,6 +197,7 @@ No live SQL, catalog data, secrets, Edge Functions, payment requests, or deploym
 ### Callback versus inventory-release lock order
 
 - Read-only inspection of the current target's `mec_process_duitku_callback` shows it locks the payment row before the order row.
+- `supabase/migrations/20261023110002_mec_process_duitku_callback.sql` adds the inspected callback RPC definition to repository migration history so the race test can be reproduced on a disposable database. It is a source-control migration only and has not been applied.
 - The draft migration changes `mec_private.release_order_inventory` to lock all payment rows for the order in deterministic ID order before locking the order. This prevents release from holding the order lock while a callback holds the payment lock, and makes callback success win consistently when it obtains the payment lock first.
 - `tests/sql/mec-callback-reservation-release-race.sh` and `tests/sql/mec-reservation-release-before-callback-race.sh` test both two-session lock orderings against an explicitly supplied disposable database via `MEC_TEST_DATABASE_URL`. They must not be pointed at production.
 - `tests/sql/mec-atomic-invoice-result.sql` covers callback-first, invoice-first, timeout-after-paid, and failed-response-after-paid orderings, plus effective execute grants for the new RPC. These tests have been added but not executed in this editing session.
