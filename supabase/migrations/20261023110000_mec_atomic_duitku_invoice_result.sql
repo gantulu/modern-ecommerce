@@ -116,7 +116,7 @@ DECLARE
   v_order public.mec_orders%ROWTYPE;
   v_item record;
 BEGIN
-  IF p_new_status NOT IN ('cancelled') THEN
+  IF p_new_status IS NULL OR p_new_status NOT IN ('cancelled') THEN
     RAISE EXCEPTION 'Unsupported release target status' USING ERRCODE = '22023';
   END IF;
 
