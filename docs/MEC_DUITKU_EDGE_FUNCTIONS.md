@@ -191,6 +191,7 @@ No live SQL, catalog data, secrets, Edge Functions, payment requests, or deploym
 - The RPC locks the payment row with `FOR UPDATE`. A provider response may change status only while the payment remains `requesting`; if a valid callback already changed the payment to `paid`, late invoice success/failure/timeout metadata cannot downgrade it.
 - Provider response metadata is recorded separately in `public.mec_payment_provider_responses`. Current response fields are mirrored to the existing `mec_payments` columns for compatibility with the checkout response shape.
 - `unknown` remains unresolved and blocks replacement attempts in the Create Invoice preflight. No POP Inquiry endpoint or automated inquiry job was invented.
+- The database-level one-active-attempt invariant remains the existing PR #5 draft at `docs/proposed-migrations/20261023_mec_payment_attempt_guard_DRAFT.sql`; this branch does not duplicate that index. The preflight blocks ordinary retries of `unknown`, but production concurrency protection still requires that separate guard to be validated and approved.
 - Proposed migration: `supabase/migrations/20261023110000_mec_atomic_duitku_invoice_result.sql`. It has been committed only to the isolated fix branch and has **not** been applied to any database.
 
 ### Callback versus inventory-release lock order
