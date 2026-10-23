@@ -29,7 +29,9 @@ DECLARE
   v_allowed boolean;
   v_retry integer;
 BEGIN
-  IF p_key_hash IS NULL OR p_key_hash !~ '^[0-9a-f]{64}
+  IF p_key_hash IS NULL OR p_key_hash !~ '^[0-9a-f]{64}$'
+     OR p_limit IS NULL OR p_limit < 1 OR p_limit > 100
+     OR p_window_seconds IS NULL OR p_window_seconds < 1 OR p_window_seconds > 3600 THEN
     RAISE EXCEPTION 'Invalid rate-limit arguments' USING ERRCODE = '22023';
   END IF;
 
