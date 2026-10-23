@@ -69,4 +69,36 @@ REVOKE ALL ON FUNCTION public.mec_consume_status_rate_limit(text, integer, integ
 GRANT EXECUTE ON FUNCTION public.mec_consume_status_rate_limit(text, integer, integer)
   TO service_role;
 
+-- Bounded cleanup primitive for a scheduled maintenance job. This migration does
+-- not create a scheduler; configure one only after choosing the project's policy.
+CREATE OR REPLACE FUNCTION public.mec_cleanup_status_rate_limit_buckets(
+  p_retention interval DEFAULT interval '7 days'
+)
+RETURNS bigint
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+  v_deleted bigint;
+BEGIN
+  IF p_retention IS NULL
+     OR p_retention < interval '1 hour'
+     OR p_retention > interval '30 days' THEN
+    RAISE EXCEPTION 'Invalid rate-limit retention interval' USING ERRCODE = '22023';
+  END IF;
+
+  DELETE FROM public.mec_status_rate_limit_buckets
+  WHERE updated_at < clock_timestamp() - p_retention;
+
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RETURN v_deleted;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.mec_cleanup_status_rate_limit_buckets(interval)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.mec_cleanup_status_rate_limit_buckets(interval)
+  TO service_role;
+
 COMMIT;
