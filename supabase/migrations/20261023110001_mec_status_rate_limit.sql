@@ -35,12 +35,12 @@ BEGIN
     RAISE EXCEPTION 'Invalid rate-limit arguments' USING ERRCODE = '22023';
   END IF;
 
-  INSERT INTO public.mec_status_rate_limit_buckets(
+  INSERT INTO public.mec_status_rate_limit_buckets AS existing(
     bucket_key_hash, window_started_at, request_count, updated_at
   ) VALUES (p_key_hash, v_now, 1, v_now)
   ON CONFLICT (bucket_key_hash) DO UPDATE
   SET window_started_at = CASE
-        WHEN public.mec_status_rate_limit_buckets.window_started_at
+        WHEN existing.window_started_at
              + make_interval(secs => p_window_seconds) <= v_now
           THEN v_now
         ELSE public.mec_status_rate_limit_buckets.window_started_at
@@ -49,7 +49,7 @@ BEGIN
         WHEN public.mec_status_rate_limit_buckets.window_started_at
              + make_interval(secs => p_window_seconds) <= v_now
           THEN 1
-        ELSE public.mec_status_rate_limit_buckets.request_count + 1
+        ELSE existing.request_count + 1
       END,
       updated_at = v_now
   RETURNING window_started_at, request_count INTO v_started, v_count;
