@@ -200,7 +200,7 @@ No live SQL, catalog data, secrets, Edge Functions, payment requests, or deploym
 - `supabase/migrations/20261023110002_mec_process_duitku_callback.sql` adds the inspected callback RPC definition to repository migration history so the race test can be reproduced on a disposable database. It is a source-control migration only and has not been applied.
 - The draft migration changes `mec_private.release_order_inventory` to lock all payment rows for the order in deterministic ID order before locking the order. This prevents release from holding the order lock while a callback holds the payment lock, and makes callback success win consistently when it obtains the payment lock first.
 - `tests/sql/mec-callback-reservation-release-race.sh` and `tests/sql/mec-reservation-release-before-callback-race.sh` test both two-session lock orderings against an explicitly supplied disposable database via `MEC_TEST_DATABASE_URL`. They must not be pointed at production.
-- `tests/sql/mec-atomic-invoice-result.sql` covers callback-first, invoice-first, timeout-after-paid, and failed-response-after-paid orderings, plus effective execute grants for the new RPC. These tests have been added but not executed in this editing session.
+- `tests/sql/mec-atomic-invoice-result.sql` covers invoice/callback ordering, timeout-after-paid, failed-response-after-paid, rate-limit behavior, effective execute grants, and the actual MEC payment-attempt index. The latest disposable PostgreSQL integration run passed: [run 39879154402](https://github.com/gantulu/modern-ecommerce/actions/runs/39879154402). Both two-session reservation-release race scripts passed in the same run.
 
 ### Payment status API and rate limiting
 
@@ -211,11 +211,16 @@ No live SQL, catalog data, secrets, Edge Functions, payment requests, or deploym
 - Proposed migration: `supabase/migrations/20261023110001_mec_status_rate_limit.sql`. It has been applied only to a disposable PostgreSQL database in CI, not to the configured Supabase project.
 - The rate-limit bucket table currently has no cleanup policy/function in this PR. Add bounded retention or a scheduled cleanup mechanism before production rollout; do not run an unbounded persistent bucket table in production.
 
-### Verification gates still open
+### Verification status and remaining gates
 
-1. Run SQL syntax and migration tests against a disposable PostgreSQL/Supabase environment.
-2. Run the callback/release two-session race test and the invoice-result ordering tests.
-3. Verify effective grants and security-definer ownership after applying the proposal in a representative non-production environment.
-4. Verify the actual frontend origin and configure `MEC_ALLOWED_ORIGINS` only after confirmation.
-5. Re-run Deno type checks, frontend build/lint, and review the current dependency audit output.
-6. Only after these gates, consider Sandbox E2E. Sandbox payment testing, live migrations, secret changes, deployment, and merge remain outside this draft change and require separate explicit authorization.
+- The disposable integration workflow `.github/workflows/mec-pr6-disposable-verification.yml` applies the MEC base schema, PR #4 draft order-idempotency SQL, PR #5 draft payment-attempt guard, and PR #6 proposed migrations in dependency order to an ephemeral PostgreSQL 16 service.
+- Latest push and pull-request checks passed on the current branch head: [push run](https://github.com/gantulu/modern-ecommerce/actions/runs/39879154402) and [pull-request run](https://github.com/gantulu/modern-ecommerce/actions/runs/39879158121). Deno checks, frontend production build, lint, SQL contracts, concurrency tests, and both callback/release races passed.
+- Read-only inspection of the configured Supabase project confirms that PR #4's idempotency RPC, PR #5's active-attempt unique index, and PR #6's provider-response/rate-limit objects are not present in the live schema. The draft migrations have not been applied.
+- The disposable run verifies grants and SQL behavior for the proposed definitions, but target-project owner/privilege checks after an approved non-production rollout remain a separate gate.
+
+Still open before any rollout:
+1. Verify the actual frontend origin before configuring `MEC_ALLOWED_ORIGINS`; the status endpoint currently fails closed if it is unset.
+2. Add bounded retention/cleanup for `mec_status_rate_limit_buckets`.
+3. Review the current package-level dependency audit and decide on minimal, evidence-based remediation.
+4. Resolve the project-wide Supabase Security Advisor findings outside MEC scope: RLS is disabled on `public.ns_invest` (ERROR), three exposed `SECURITY DEFINER` functions are executable by `anon` and `authenticated`, 14 functions have mutable search paths, and 35 RLS-enabled tables have no policies (informational finding; assess each table's intended access model). These were not changed because they are outside the MEC checkout/payment scope.
+5. Only after the preceding gates, consider Sandbox E2E. Sandbox payment testing, live migrations, secret changes, deployment, and merge remain outside this draft change and require separate explicit authorization.
