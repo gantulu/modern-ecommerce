@@ -1,0 +1,109 @@
+name: MEC PR6 disposable integration verification
+
+on:
+  push:
+    branches:
+      - fix/mec-payment-state-atomic-v1
+  pull_request:
+    branches:
+      - feat/mec-checkout-duitku-pop
+    paths:
+      - "supabase/migrations/**"
+      - "docs/proposed-migrations/20261023_mec_order_idempotency_rate_limit_DRAFT.sql"
+      - "docs/proposed-migrations/20261023_mec_payment_attempt_guard_DRAFT.sql"
+      - "supabase/functions/mec-duitku-create-invoice/**"
+      - "supabase/functions/mec-duitku-payment-status/**"
+      - "src/pages/Cart.tsx"
+      - "tests/sql/**"
+      - ".github/workflows/mec-pr6-disposable-verification.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  disposable-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+      MEC_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+      - name: Bootstrap minimal Supabase Auth roles and fixture
+        run: psql -X -v ON_ERROR_STOP=1 -f tests/sql/mec-order-idempotency-fixture-bootstrap.sql
+      - name: Apply MEC base schema to disposable PostgreSQL
+        run: psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261022180316_create_mec_ecommerce_v1.sql
+      - name: Apply atomic Duitku callback base RPC
+        run: psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261022182552_mec_atomic_duitku_callback_v1.sql
+      - name: Apply PR4 draft order idempotency contract
+        run: psql -X -v ON_ERROR_STOP=1 -f docs/proposed-migrations/20261023_mec_order_idempotency_rate_limit_DRAFT.sql
+      - name: Seed disposable MEC products and rollback trigger
+        run: psql -X -v ON_ERROR_STOP=1 -f tests/sql/mec-order-idempotency-fixture.sql
+      - name: Apply PR5 draft active payment-attempt guard
+        run: psql -X -v ON_ERROR_STOP=1 -f docs/proposed-migrations/20261023_mec_payment_attempt_guard_DRAFT.sql
+      - name: Apply PR6 atomic invoice-result migration
+        run: psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261023110000_mec_atomic_duitku_invoice_result.sql
+      - name: Apply PR6 durable rate-limiter migration
+        run: psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261023110001_mec_status_rate_limit.sql
+      - name: Apply source-controlled callback RPC migration
+        run: psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20261023110002_mec_process_duitku_callback.sql
+      - name: Run PR4 order-idempotency SQL contract tests
+        run: psql -X -v ON_ERROR_STOP=1 -f tests/sql/mec-order-idempotency-smoke.sql
+      - name: Run PR4 concurrent order-idempotency tests
+        run: bash tests/sql/mec-order-idempotency-concurrency.sh
+      - name: Run PR5 payment-attempt guard contract tests
+        run: psql -X -v ON_ERROR_STOP=1 -f tests/sql/mec-payment-attempt-guard.sql
+      - name: Run PR5 concurrent payment-attempt tests
+        run: bash tests/sql/mec-payment-attempt-concurrency.sh
+      - name: Run PR6 payment-state and rate-limit SQL tests
+        run: psql -X -v ON_ERROR_STOP=1 -f tests/sql/mec-atomic-invoice-result.sql
+      - name: Run callback-first reservation-release race
+        run: bash tests/sql/mec-callback-reservation-release-race.sh
+      - name: Run release-first callback race
+        run: bash tests/sql/mec-reservation-release-before-callback-race.sh
+
+  application-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install locked dependencies without install hooks
+        run: npm ci --ignore-scripts
+      - name: Type-check MEC order creation
+        run: deno check supabase/functions/mec-create-order/index.ts
+      - name: Type-check MEC Duitku Create Invoice
+        run: deno check supabase/functions/mec-duitku-create-invoice/index.ts
+      - name: Type-check MEC Duitku payment status
+        run: deno check supabase/functions/mec-duitku-payment-status/index.ts
+      - name: Build frontend
+        run: npm run build
+      - name: Lint frontend
+        run: npm run lint
