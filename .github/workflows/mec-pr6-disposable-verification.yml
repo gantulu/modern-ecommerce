@@ -18,6 +18,10 @@ on:
       - ".github/workflows/mec-pr6-disposable-verification.yml"
   workflow_dispatch:
 
+concurrency:
+  group: mec-pr6-disposable-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
