@@ -42,7 +42,7 @@ JSON body:
 - The server derives amount and item details from MEC order rows; it ignores client-supplied price/total.
 - Allowed expiry periods are 5, 10, or 60 minutes.
 - A timeout/uncertain Create Invoice response is stored as `unknown`. Do not generate a replacement attempt until reconciliation.
-- This endpoint uses `verify_jwt=false` at the gateway because guest checkout is supported; it performs explicit bearer-token validation for authenticated orders and SHA-256 guest-token verification for guest orders.
+- This endpoint uses `verify_jwt=false` at the gateway and performs explicit bearer-token validation for authenticated orders or SHA-256 guest-token verification for a guest order. **The current repository checkout flow is authenticated-only**: `mec-create-order` requires a valid user session, Cart redirects signed-out users to `/auth`, and the payment-status endpoint requires a bearer token. Guest invoice handling is only a lower-level capability for an already-created guest order; it does not mean the current frontend supports guest checkout.
 
 ## Callback behavior
 
@@ -83,6 +83,8 @@ The checkout UI in `src/pages/Cart.tsx` now uses the MEC flow instead of writing
 4. The RPC serializes retries by checkout idempotency key and delegates inventory locking, database-price calculation, order creation, and stock reservation to the existing atomic `mec_private.create_order` routine.
 5. The frontend calls `mec-duitku-create-invoice` with a stable per-order idempotency key and redirects only to the HTTPS `payment_url` returned by the backend.
 6. The cart is cleared only after a valid payment URL is returned. A failed or uncertain invoice result does not automatically create a replacement payment attempt.
+7. `/orders` now renders the MEC order-history page. It reads `mec_orders`, `mec_order_items`, and `mec_payments` for the signed-in user's orders under the existing owner-scoped RLS policies; it does not use legacy tables or mock payment state.
+8. The former mock shipping tracker is preserved at `/order-tracking`. Its simulated carrier data is not payment authority and is not presented as a verified live shipment integration.
 
 ### Required rollout order
 
@@ -178,6 +180,52 @@ No live SQL, catalog data, secrets, Edge Functions, payment requests, or deploym
 - No Sandbox payment test has been started. It remains gated on explicit authorization.
 
 
-### CI status snapshot — 2026-10-23
-- Fresh checkout workflow: [39869943212](https://github.com/gantulu/modern-ecommerce/actions/runs/39869943212) is in progress. Its frontend job includes the new dependency audit report and reruns build + lint; do not treat either the lint or package-level audit as complete until the workflow finishes.
-- Payment-attempt guard workflow: [39869942992](https://github.com/gantulu/modern-ecommerce/actions/runs/39869942992) is in progress.
+### Historical CI status snapshot — superseded by the PR #6 integration workflow
+- Earlier checkout workflow: [39869943212](https://github.com/gantulu/modern-ecommerce/actions/runs/39869943212).
+- Earlier payment-attempt guard workflow: [39869942992](https://github.com/gantulu/modern-ecommerce/actions/runs/39869942992).
+- Use the latest PR #6 integration workflow links in the verification section below for current SQL, concurrency, Deno, build, and lint status.
+
+
+## Atomic payment-state and status API hardening — draft branch update (2026-10-23)
+
+### Invoice response transition contract
+
+- The Create Invoice Edge Function no longer directly updates `mec_payments.payment_status` after provider responses. Success, provider rejection, malformed response, and transport timeout call `public.mec_record_duitku_invoice_result`.
+- The RPC locks the payment row with `FOR UPDATE`. A provider response may change status only while the payment remains `requesting`; if a valid callback already changed the payment to `paid`, late invoice success/failure/timeout metadata cannot downgrade it.
+- Provider response metadata is recorded separately in `public.mec_payment_provider_responses`. Current response fields are mirrored to the existing `mec_payments` columns for compatibility with the checkout response shape.
+- `unknown` remains unresolved and blocks replacement attempts in the Create Invoice preflight. No POP Inquiry endpoint or automated inquiry job was invented.
+- The database-level one-active-attempt invariant remains the existing PR #5 draft at `docs/proposed-migrations/20261023_mec_payment_attempt_guard_DRAFT.sql`; this branch does not duplicate that index. The preflight blocks ordinary retries of `unknown`, but production concurrency protection still requires that separate guard to be validated and approved.
+- Proposed migration: `supabase/migrations/20261023110000_mec_atomic_duitku_invoice_result.sql`. It has been committed only to the isolated fix branch and has **not** been applied to any database.
+
+### Callback versus inventory-release lock order
+
+- Read-only inspection of the current target's `mec_process_duitku_callback` shows it locks the payment row before the order row.
+- `supabase/migrations/20261023110002_mec_process_duitku_callback.sql` adds the inspected callback RPC definition to repository migration history so the race test can be reproduced on a disposable database. It is a source-control migration only and has not been applied.
+- The draft migration changes `mec_private.release_order_inventory` to lock all payment rows for the order in deterministic ID order before locking the order. This prevents release from holding the order lock while a callback holds the payment lock, and makes callback success win consistently when it obtains the payment lock first.
+- `tests/sql/mec-callback-reservation-release-race.sh` and `tests/sql/mec-reservation-release-before-callback-race.sh` test both two-session lock orderings against an explicitly supplied disposable database via `MEC_TEST_DATABASE_URL`. They must not be pointed at production.
+- `tests/sql/mec-atomic-invoice-result.sql` covers invoice/callback ordering, timeout-after-paid, failed-response-after-paid, rate-limit behavior, effective execute grants, and the actual MEC payment-attempt index. The latest disposable PostgreSQL integration run passed: [run 39879154402](https://github.com/gantulu/modern-ecommerce/actions/runs/39879635437). Both two-session reservation-release race scripts passed in the same run.
+
+### Payment status API and rate limiting
+
+- Added `supabase/functions/mec-duitku-payment-status/` to the draft branch. It returns `payment.payment_status`, `payment.order_status`, `payment.merchant_order_id`, and `payment.updated_at`, consistent with the MEC payment/order status contract.
+- The API requires an authenticated Supabase bearer token, validates order ownership, and returns the same not-found response for nonexistent and inaccessible orders. This matches the current Cart flow, which requires sign-in; guest checkout is not enabled in the frontend.
+- The previous per-isolate in-memory limiter is not used. Requests call the proposed atomic `public.mec_consume_status_rate_limit` RPC after bearer-token validation. The limiter is keyed by the authenticated Supabase user ID, and only a SHA-256 hash of that key is stored; it does not trust caller-supplied IP headers.
+- CORS uses an explicit server-side `MEC_ALLOWED_ORIGINS` comma-separated allowlist. No production origin has been verified from the repository evidence, so the endpoint fails closed with `STATUS_API_ORIGIN_NOT_CONFIGURED` until a verified origin is configured. Do not deploy or set this environment variable based on an assumption.
+- Security review note: the Create Invoice Edge Function still emits `Access-Control-Allow-Origin: *`; it has not yet been aligned to the status API's allowlist. CORS is not authorization, but align the policy to the verified frontend origin before production rollout.
+- Proposed migration: `supabase/migrations/20261023110001_mec_status_rate_limit.sql`. It has been applied only to a disposable PostgreSQL database in CI, not to the configured Supabase project.
+- The migration now includes the bounded `public.mec_cleanup_status_rate_limit_buckets(interval)` RPC, restricted to `service_role`, with a 1-hour to 30-day retention bound. A scheduler has not been configured; choose and verify a scheduled cleanup policy before production rollout so stale buckets do not accumulate indefinitely.
+
+### Verification status and remaining gates
+
+- The disposable integration workflow `.github/workflows/mec-pr6-disposable-verification.yml` applies the MEC base schema, PR #4 draft order-idempotency SQL, PR #5 draft payment-attempt guard, and PR #6 proposed migrations in dependency order to an ephemeral PostgreSQL 16 service.
+- Latest push and pull-request checks passed on the current branch head: [push run](https://github.com/gantulu/modern-ecommerce/actions/runs/39879154402) and [pull-request run](https://github.com/gantulu/modern-ecommerce/actions/runs/39879639490). Deno checks, frontend production build, lint, SQL contracts, concurrency tests, and both callback/release races passed.
+- Read-only inspection of the configured Supabase project confirms that PR #4's idempotency RPC, PR #5's active-attempt unique index, and PR #6's provider-response/rate-limit objects are not present in the live schema. The draft migrations have not been applied.
+- The disposable run verifies grants and SQL behavior for the proposed definitions, but target-project owner/privilege checks after an approved non-production rollout remain a separate gate.
+- The same latest workflow reports **38 dependency vulnerabilities: 28 high, 6 moderate, 4 low, 0 critical**. Direct affected packages include `vite`, `react-router-dom`, `postcss`, `tailwindcss`, `typescript-eslint`, and `@supabase/supabase-js`. No dependency upgrades were applied; the suggested Tailwind remediation is a major-version change and needs a separate compatibility plan.
+
+Still open before any rollout:
+1. Verify the actual frontend origin before configuring `MEC_ALLOWED_ORIGINS`; the status endpoint currently fails closed if it is unset.
+2. Add bounded retention/cleanup for `mec_status_rate_limit_buckets`.
+3. Review the current package-level dependency audit and decide on minimal, evidence-based remediation.
+4. Resolve the project-wide Supabase Security Advisor findings outside MEC scope: RLS is disabled on `public.ns_invest` (ERROR), three exposed `SECURITY DEFINER` functions are executable by `anon` and `authenticated`, 14 functions have mutable search paths, and 35 RLS-enabled tables have no policies (informational finding; assess each table's intended access model). These were not changed because they are outside the MEC checkout/payment scope.
+5. Only after the preceding gates, consider Sandbox E2E. Sandbox payment testing, live migrations, secret changes, deployment, and merge remain outside this draft change and require separate explicit authorization.

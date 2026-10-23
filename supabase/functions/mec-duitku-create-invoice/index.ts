@@ -110,7 +110,15 @@ Deno.serve(async req => {
     });
     raw = await response.text();
   } catch (e) {
-    await db.from("mec_payments").update({ payment_status:"unknown", provider_status_message:"Create Invoice transport outcome unknown", updated_at:new Date().toISOString() }).eq("id",payment.id);
+    const { error: stateError } = await db.rpc("mec_record_duitku_invoice_result", {
+      p_payment_id: payment.id,
+      p_outcome: "unknown",
+      p_provider_reference: null,
+      p_payment_url: null,
+      p_provider_status_code: null,
+      p_provider_status_message: "Create Invoice transport outcome unknown",
+    });
+    if (stateError) console.error("Unable to record uncertain Duitku outcome", stateError.code);
     console.error("Duitku transport outcome unknown", e);
     return out({ error:"Payment outcome unknown; reconcile before retry", merchant_order_id:merchantOrderId },504);
   }
@@ -119,18 +127,53 @@ Deno.serve(async req => {
   const code = String(result.statusCode ?? "");
   if (!response.ok || code !== "00") {
     const known = response.ok && code !== "";
-    await db.from("mec_payments").update({ payment_status:known?"failed":"unknown", provider_status_code:code||null, provider_status_message:String(result.statusMessage??"Unconfirmed provider response").slice(0,500), updated_at:new Date().toISOString() }).eq("id",payment.id);
+    const { error: stateError } = await db.rpc("mec_record_duitku_invoice_result", {
+      p_payment_id: payment.id,
+      p_outcome: known ? "failed" : "unknown",
+      p_provider_reference: typeof result.reference === "string" ? result.reference : null,
+      p_payment_url: typeof result.paymentUrl === "string" && result.paymentUrl.startsWith("https://") ? result.paymentUrl : null,
+      p_provider_status_code: code || null,
+      p_provider_status_message: String(result.statusMessage ?? "Unconfirmed provider response").slice(0, 500),
+    });
+    if (stateError) {
+      console.error("Unable to record Duitku response", stateError.code);
+      return out({ error:"Payment outcome could not be safely recorded; reconcile before retry", merchant_order_id:merchantOrderId },500);
+    }
     return out({ error:known?"Duitku rejected invoice":"Duitku outcome unknown; reconcile before retry", status_code:code||null, merchant_order_id:merchantOrderId },502);
   }
   const reference = String(result.reference??""), paymentUrl = String(result.paymentUrl??"");
   if (!reference || !paymentUrl.startsWith("https://")) {
-    await db.from("mec_payments").update({ payment_status:"unknown", provider_status_code:code, provider_status_message:"Missing reference/payment URL in provider response", updated_at:new Date().toISOString() }).eq("id",payment.id);
+    const { error: stateError } = await db.rpc("mec_record_duitku_invoice_result", {
+      p_payment_id: payment.id,
+      p_outcome: "unknown",
+      p_provider_reference: reference || null,
+      p_payment_url: paymentUrl || null,
+      p_provider_status_code: code || null,
+      p_provider_status_message: "Missing reference/payment URL in provider response",
+    });
+    if (stateError) {
+      console.error("Unable to record incomplete Duitku response", stateError.code);
+      return out({ error:"Payment outcome could not be safely recorded; reconcile before retry", merchant_order_id:merchantOrderId },500);
+    }
     return out({ error:"Incomplete provider response; reconcile before retry", merchant_order_id:merchantOrderId },502);
   }
-  const { data: updated, error: updateErr } = await db.from("mec_payments").update({
-    payment_status:"pending", provider_reference:reference, payment_url:paymentUrl, provider_status_code:code,
-    provider_status_message:String(result.statusMessage??"SUCCESS").slice(0,500), updated_at:new Date().toISOString()
-  }).eq("id",payment.id).select("id,order_id,merchant_order_id,amount_idr,payment_status,payment_url,provider_reference,expires_at").single();
-  if (updateErr || !updated) return out({ error:"Invoice may exist but DB update failed; do not create another attempt", merchant_order_id:merchantOrderId },500);
+  const { error: stateError } = await db.rpc("mec_record_duitku_invoice_result", {
+    p_payment_id: payment.id,
+    p_outcome: "pending",
+    p_provider_reference: reference,
+    p_payment_url: paymentUrl,
+    p_provider_status_code: code,
+    p_provider_status_message: String(result.statusMessage ?? "SUCCESS").slice(0, 500),
+  });
+  if (stateError) {
+    console.error("Atomic invoice-result RPC failed", stateError.code);
+    return out({ error:"Invoice may exist but DB update failed; do not create another attempt", merchant_order_id:merchantOrderId },500);
+  }
+  // Read back the authoritative state. A callback may have marked the payment paid
+  // before this provider response arrived; this handler must never downgrade it.
+  const { data: updated, error: readError } = await db.from("mec_payments")
+    .select("id,order_id,merchant_order_id,amount_idr,payment_status,payment_url,provider_reference,expires_at")
+    .eq("id", payment.id).single();
+  if (readError || !updated) return out({ error:"Invoice response was recorded but payment state could not be read; reconcile before retry", merchant_order_id:merchantOrderId },500);
   return out({ payment:updated, reused:false });
 });
