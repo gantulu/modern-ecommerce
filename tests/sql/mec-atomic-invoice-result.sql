@@ -83,8 +83,7 @@ BEGIN
       RAISE EXCEPTION 'Case % downgraded paid to %', v_case, v_status;
     END IF;
 
-    IF (SELECT count(*) FROM public.mec_payment_provider_responses WHERE payment_id = v_payment_id) <>
-       CASE WHEN v_case = 'invoice_before_callback' THEN 1 ELSE 1 END THEN
+    IF (SELECT count(*) FROM public.mec_payment_provider_responses WHERE payment_id = v_payment_id) <> 1 THEN
       RAISE EXCEPTION 'Provider response metadata was not recorded for case %', v_case;
     END IF;
 
