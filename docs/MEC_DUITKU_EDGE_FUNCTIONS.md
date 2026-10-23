@@ -83,6 +83,8 @@ The checkout UI in `src/pages/Cart.tsx` now uses the MEC flow instead of writing
 4. The RPC serializes retries by checkout idempotency key and delegates inventory locking, database-price calculation, order creation, and stock reservation to the existing atomic `mec_private.create_order` routine.
 5. The frontend calls `mec-duitku-create-invoice` with a stable per-order idempotency key and redirects only to the HTTPS `payment_url` returned by the backend.
 6. The cart is cleared only after a valid payment URL is returned. A failed or uncertain invoice result does not automatically create a replacement payment attempt.
+7. `/orders` now renders the MEC order-history page. It reads `mec_orders`, `mec_order_items`, and `mec_payments` for the signed-in user's orders under the existing owner-scoped RLS policies; it does not use legacy tables or mock payment state.
+8. The former mock shipping tracker is preserved at `/order-tracking`. Its simulated carrier data is not payment authority and is not presented as a verified live shipment integration.
 
 ### Required rollout order
 
@@ -178,9 +180,10 @@ No live SQL, catalog data, secrets, Edge Functions, payment requests, or deploym
 - No Sandbox payment test has been started. It remains gated on explicit authorization.
 
 
-### CI status snapshot — 2026-10-23
-- Fresh checkout workflow: [39869943212](https://github.com/gantulu/modern-ecommerce/actions/runs/39869943212) is in progress. Its frontend job includes the new dependency audit report and reruns build + lint; do not treat either the lint or package-level audit as complete until the workflow finishes.
-- Payment-attempt guard workflow: [39869942992](https://github.com/gantulu/modern-ecommerce/actions/runs/39869942992) is in progress.
+### Historical CI status snapshot — superseded by the PR #6 integration workflow
+- Earlier checkout workflow: [39869943212](https://github.com/gantulu/modern-ecommerce/actions/runs/39869943212).
+- Earlier payment-attempt guard workflow: [39869942992](https://github.com/gantulu/modern-ecommerce/actions/runs/39869942992).
+- Use the latest PR #6 integration workflow links in the verification section below for current SQL, concurrency, Deno, build, and lint status.
 
 
 ## Atomic payment-state and status API hardening — draft branch update (2026-10-23)
