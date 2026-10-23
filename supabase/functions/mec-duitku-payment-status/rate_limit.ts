@@ -1,4 +1,5 @@
-// Trust only the edge-provided client address header; never use caller-controlled X-Forwarded-For.
-export function rateLimitKey(request: Request): string {
-  return request.headers.get("cf-connecting-ip")?.trim() || "ip:unknown";
+// Durable limiter key is derived from an authenticated Supabase user ID.
+// The database stores only the SHA-256 hash, not the user ID itself.
+export function rateLimitKey(userId: string): string {
+  return `user:${userId}`;
 }
